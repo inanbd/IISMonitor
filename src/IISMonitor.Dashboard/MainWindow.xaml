@@ -1,0 +1,277 @@
+<Window x:Class="IISMonitor.Dashboard.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:controls="clr-namespace:IISMonitor.Dashboard.Controls"
+        Title="{Binding MachineName, StringFormat='IIS Monitor — {0}'}"
+        Width="1440" Height="900" MinWidth="900" MinHeight="600"
+        Background="#F3F5F8"
+        WindowStartupLocation="CenterScreen">
+    <Window.Resources>
+        <BooleanToVisibilityConverter x:Key="BoolToVisibility" />
+    </Window.Resources>
+
+    <DockPanel>
+        <!-- Header -->
+        <Border DockPanel.Dock="Top" Background="{StaticResource AccentBrush}" Padding="12,8">
+            <DockPanel>
+                <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
+                    <TextBlock Text="Update every" Foreground="White" VerticalAlignment="Center" Margin="0,0,4,0" />
+                    <ComboBox ItemsSource="{Binding IntervalOptions}" SelectedItem="{Binding SelectedInterval}" DisplayMemberPath="Label" />
+                    <Button Content="{Binding PauseLabel}" Command="{Binding TogglePauseCommand}" MinWidth="70" />
+                    <Button Content="Enable response times" Command="{Binding EnableResponseTimesCommand}"
+                            Visibility="{Binding CanEnableResponseTimes, Converter={StaticResource BoolToVisibility}}"
+                            ToolTip="Turn on IIS ETW logging so response times are measured live for every request." />
+                    <Button Content="Settings…" Click="OnSettingsClick" />
+                </StackPanel>
+                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                    <TextBlock Text="IIS Monitor" Foreground="White" FontSize="18" FontWeight="SemiBold" />
+                    <TextBlock Text="{Binding MachineName}" Foreground="#C9D8E8" FontSize="18" Margin="10,0,0,0" />
+                    <Border Background="#2E6BA6" CornerRadius="3" Padding="8,2" Margin="14,0,0,0" VerticalAlignment="Center">
+                        <TextBlock Foreground="White" FontSize="11">
+                            <Run Text="● Live" /><Run Text=" · " /><Run Text="{Binding SourceText, Mode=OneWay}" />
+                        </TextBlock>
+                    </Border>
+                </StackPanel>
+            </DockPanel>
+        </Border>
+
+        <!-- Banner (standalone mode, reconnecting, errors) -->
+        <Border DockPanel.Dock="Top" Padding="12,6" BorderThickness="0,0,0,1"
+                Visibility="{Binding HasBanner, Converter={StaticResource BoolToVisibility}}">
+            <Border.Style>
+                <Style TargetType="Border">
+                    <Setter Property="Background" Value="{StaticResource InfoBrush}" />
+                    <Setter Property="BorderBrush" Value="#B9CCE0" />
+                    <Style.Triggers>
+                        <DataTrigger Binding="{Binding BannerIsWarning}" Value="True">
+                            <Setter Property="Background" Value="{StaticResource WarningBrush}" />
+                            <Setter Property="BorderBrush" Value="{StaticResource WarningBorderBrush}" />
+                        </DataTrigger>
+                    </Style.Triggers>
+                </Style>
+            </Border.Style>
+            <DockPanel>
+                <Button DockPanel.Dock="Right" Content="Start the service" Command="{Binding StartServiceCommand}"
+                        Visibility="{Binding CanStartService, Converter={StaticResource BoolToVisibility}}" />
+                <TextBlock Text="{Binding BannerText}" TextWrapping="Wrap" VerticalAlignment="Center" />
+            </DockPanel>
+        </Border>
+
+        <!-- Status bar -->
+        <Border DockPanel.Dock="Bottom" Background="#E6EAEF" Padding="12,4">
+            <TextBlock Text="{Binding StatusText}" Foreground="{StaticResource MutedBrush}" />
+        </Border>
+
+        <!-- Summary tiles -->
+        <UniformGrid DockPanel.Dock="Top" Rows="1" Margin="8,8,8,0">
+            <Border Style="{StaticResource TileBorder}">
+                <StackPanel>
+                    <TextBlock Text="SERVER CPU" Style="{StaticResource TileTitle}" />
+                    <TextBlock Text="{Binding ServerCpuText}" Style="{StaticResource TileValue}" />
+                </StackPanel>
+            </Border>
+            <Border Style="{StaticResource TileBorder}">
+                <StackPanel>
+                    <TextBlock Text="SERVER MEMORY" Style="{StaticResource TileTitle}" />
+                    <TextBlock Text="{Binding MemoryText}" Style="{StaticResource TileValue}" />
+                </StackPanel>
+            </Border>
+            <Border Style="{StaticResource TileBorder}">
+                <StackPanel>
+                    <TextBlock Text="REQUESTS / SEC (ALL SITES)" Style="{StaticResource TileTitle}" />
+                    <TextBlock Text="{Binding RequestsText}" Style="{StaticResource TileValue}" />
+                </StackPanel>
+            </Border>
+            <Border Style="{StaticResource TileBorder}">
+                <StackPanel>
+                    <TextBlock Text="ACTIVE REQUESTS" Style="{StaticResource TileTitle}" />
+                    <TextBlock Text="{Binding ActiveRequestsText}" Style="{StaticResource TileValue}" />
+                </StackPanel>
+            </Border>
+            <Border Style="{StaticResource TileBorder}">
+                <StackPanel>
+                    <TextBlock Text="SQL SERVER CONNECTIONS" Style="{StaticResource TileTitle}" />
+                    <TextBlock Text="{Binding DbText}" Style="{StaticResource TileValue}" />
+                </StackPanel>
+            </Border>
+            <Border Style="{StaticResource TileBorder}">
+                <StackPanel>
+                    <TextBlock Text="AVG RESPONSE (ALL SITES)" Style="{StaticResource TileTitle}" />
+                    <TextBlock Text="{Binding ResponseText}" Style="{StaticResource TileValue}" />
+                </StackPanel>
+            </Border>
+        </UniformGrid>
+
+        <TabControl x:Name="Tabs" Margin="12,8,12,8" SelectionChanged="OnTabChanged">
+            <!-- App pools -->
+            <TabItem Header="App pools">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="2*" MinHeight="120" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="3*" MinHeight="200" />
+                    </Grid.RowDefinitions>
+
+                    <DataGrid ItemsSource="{Binding Pools}" SelectedItem="{Binding SelectedPool}">
+                        <DataGrid.Columns>
+                            <DataGridTextColumn Header="App pool" Binding="{Binding Name}" SortMemberPath="Name" Width="180" ElementStyle="{StaticResource TextCell}" />
+                            <DataGridTextColumn Header="State" Binding="{Binding State}" Width="70" ElementStyle="{StaticResource StateCell}" />
+                            <DataGridTextColumn Header="Processes" Binding="{Binding ProcessText}" SortMemberPath="ProcessCount" Width="80" ElementStyle="{StaticResource NumberCell}" />
+                            <DataGridTextColumn Header="CPU" Binding="{Binding CpuText}" SortMemberPath="Cpu" Width="70" ElementStyle="{StaticResource NumberCell}" />
+                            <DataGridTextColumn Header="Private memory" Binding="{Binding PrivateText}" SortMemberPath="PrivateBytes" Width="105" ElementStyle="{StaticResource NumberCell}" />
+                            <DataGridTextColumn Header="Working set" Binding="{Binding WorkingSetText}" SortMemberPath="WorkingSet" Width="90" ElementStyle="{StaticResource NumberCell}" />
+                            <DataGridTextColumn Header="Disk read / write" Binding="{Binding DiskText}" SortMemberPath="DiskTotal" Width="150" ElementStyle="{StaticResource NumberCell}" />
+                            <DataGridTextColumn Header="Network sent / recv" Binding="{Binding NetworkText}" SortMemberPath="NetworkTotal" Width="150" ElementStyle="{StaticResource NumberCell}" />
+                            <DataGridTextColumn Header="DB conns" Binding="{Binding DbConnectionsText}" SortMemberPath="DbConnections" Width="70" ElementStyle="{StaticResource NumberCell}" />
+                            <DataGridTextColumn Header="DB sessions" Binding="{Binding DbSessionsText}" SortMemberPath="DbSessions" Width="110" ElementStyle="{StaticResource NumberCell}" />
+                            <DataGridTextColumn Header="Req/sec" Binding="{Binding RequestsText}" SortMemberPath="RequestsPerSec" Width="70" ElementStyle="{StaticResource NumberCell}" />
+                            <DataGridTextColumn Header="Active" Binding="{Binding ActiveRequestsText}" SortMemberPath="ActiveRequests" Width="60" ElementStyle="{StaticResource NumberCell}" />
+                            <DataGridTextColumn Header="Queue" Binding="{Binding QueueText}" SortMemberPath="Queue" Width="60" ElementStyle="{StaticResource NumberCell}" />
+                            <DataGridTextColumn Header="Resp. avg" Binding="{Binding ResponseAvgText}" SortMemberPath="ResponseAvg" Width="80" ElementStyle="{StaticResource NumberCell}" />
+                            <DataGridTextColumn Header="Resp. p95" Binding="{Binding ResponseP95Text}" SortMemberPath="ResponseP95" Width="80" ElementStyle="{StaticResource NumberCell}" />
+                        </DataGrid.Columns>
+                    </DataGrid>
+
+                    <GridSplitter Grid.Row="1" Height="6" HorizontalAlignment="Stretch" Background="Transparent" />
+
+                    <DockPanel Grid.Row="2">
+                        <DockPanel DockPanel.Dock="Top" Margin="0,4">
+                            <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                                <TextBlock Text="Chart window" VerticalAlignment="Center" />
+                                <ComboBox ItemsSource="{Binding WindowOptions}" SelectedItem="{Binding SelectedWindow}" DisplayMemberPath="Label" />
+                            </StackPanel>
+                            <TextBlock Text="{Binding SelectedPoolHeader}" FontWeight="SemiBold" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+                        </DockPanel>
+                        <DataGrid DockPanel.Dock="Top" ItemsSource="{Binding SelectedPoolProcesses}" MaxHeight="140" Margin="0,0,0,4">
+                            <DataGrid.Columns>
+                                <DataGridTextColumn Header="PID" Binding="{Binding Pid}" Width="70" ElementStyle="{StaticResource NumberCell}" />
+                                <DataGridTextColumn Header="Process" Binding="{Binding Name}" Width="140" ElementStyle="{StaticResource TextCell}" />
+                                <DataGridTextColumn Header="Role" Binding="{Binding Role}" Width="110" ElementStyle="{StaticResource TextCell}" />
+                                <DataGridTextColumn Header="CPU" Binding="{Binding CpuText}" SortMemberPath="Cpu" Width="70" ElementStyle="{StaticResource NumberCell}" />
+                                <DataGridTextColumn Header="Private memory" Binding="{Binding PrivateText}" Width="105" ElementStyle="{StaticResource NumberCell}" />
+                                <DataGridTextColumn Header="Working set" Binding="{Binding WorkingSetText}" Width="90" ElementStyle="{StaticResource NumberCell}" />
+                                <DataGridTextColumn Header="Threads" Binding="{Binding Threads}" Width="65" ElementStyle="{StaticResource NumberCell}" />
+                                <DataGridTextColumn Header="Handles" Binding="{Binding Handles}" Width="70" ElementStyle="{StaticResource NumberCell}" />
+                                <DataGridTextColumn Header="Disk read / write" Binding="{Binding DiskText}" Width="150" ElementStyle="{StaticResource NumberCell}" />
+                                <DataGridTextColumn Header="Network sent / recv" Binding="{Binding NetworkText}" Width="150" ElementStyle="{StaticResource NumberCell}" />
+                                <DataGridTextColumn Header="DB" Binding="{Binding DbText}" Width="150" ElementStyle="{StaticResource NumberCell}" />
+                                <DataGridTextColumn Header="Started" Binding="{Binding Started}" Width="130" ElementStyle="{StaticResource TextCell}" />
+                            </DataGrid.Columns>
+                        </DataGrid>
+                        <controls:ChartPanel x:Name="PoolCharts" />
+                    </DockPanel>
+                </Grid>
+            </TabItem>
+
+            <!-- Sites -->
+            <TabItem Header="Sites">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="2*" MinHeight="120" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="3*" MinHeight="200" />
+                    </Grid.RowDefinitions>
+
+                    <DataGrid ItemsSource="{Binding Sites}" SelectedItem="{Binding SelectedSite}">
+                        <DataGrid.Columns>
+                            <DataGridTextColumn Header="Site" Binding="{Binding Name}" Width="180" ElementStyle="{StaticResource TextCell}" />
+                            <DataGridTextColumn Header="ID" Binding="{Binding Id}" Width="45" ElementStyle="{StaticResource NumberCell}" />
+                            <DataGridTextColumn Header="State" Binding="{Binding State}" Width="70" ElementStyle="{StaticResource StateCell}" />
+                            <DataGridTextColumn Header="App pool" Binding="{Binding AppPool}" Width="140" ElementStyle="{StaticResource TextCell}" />
+                            <DataGridTextColumn Header="Connections" Binding="{Binding ConnectionsText}" SortMemberPath="Connections" Width="85" ElementStyle="{StaticResource NumberCell}" />
+                            <DataGridTextColumn Header="Req/sec" Binding="{Binding RequestsText}" SortMemberPath="RequestsPerSec" Width="70" ElementStyle="{StaticResource NumberCell}" />
+                            <DataGridTextColumn Header="Bandwidth sent / recv" Binding="{Binding BandwidthText}" SortMemberPath="Bandwidth" Width="160" ElementStyle="{StaticResource NumberCell}" />
+                            <DataGridTextColumn Header="Resp. avg" Binding="{Binding ResponseAvgText}" SortMemberPath="ResponseAvg" Width="80" ElementStyle="{StaticResource NumberCell}" />
+                            <DataGridTextColumn Header="Resp. p95" Binding="{Binding ResponseP95Text}" SortMemberPath="ResponseP95" Width="80" ElementStyle="{StaticResource NumberCell}" />
+                            <DataGridTextColumn Header="Resp. max" Binding="{Binding ResponseMaxText}" SortMemberPath="ResponseMax" Width="80" ElementStyle="{StaticResource NumberCell}" />
+                            <DataGridTextColumn Header="4xx / 5xx" Binding="{Binding ErrorsText}" SortMemberPath="ServerErrors" Width="75" ElementStyle="{StaticResource NumberCell}" />
+                            <DataGridTextColumn Header="Response tracing" Binding="{Binding TracingText}" Width="110" ElementStyle="{StaticResource TextCell}" />
+                            <DataGridTextColumn Header="Bindings" Binding="{Binding BindingsText}" Width="*" ElementStyle="{StaticResource TextCell}" />
+                        </DataGrid.Columns>
+                    </DataGrid>
+
+                    <GridSplitter Grid.Row="1" Height="6" HorizontalAlignment="Stretch" Background="Transparent" />
+
+                    <DockPanel Grid.Row="2">
+                        <DockPanel DockPanel.Dock="Top" Margin="0,4">
+                            <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                                <TextBlock Text="Chart window" VerticalAlignment="Center" />
+                                <ComboBox ItemsSource="{Binding WindowOptions}" SelectedItem="{Binding SelectedWindow}" DisplayMemberPath="Label" />
+                            </StackPanel>
+                            <TextBlock Text="{Binding SelectedSiteHeader}" FontWeight="SemiBold" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+                        </DockPanel>
+                        <controls:ChartPanel x:Name="SiteCharts" />
+                    </DockPanel>
+                </Grid>
+            </TabItem>
+
+            <!-- Server -->
+            <TabItem Header="Server">
+                <DockPanel>
+                    <DockPanel DockPanel.Dock="Top" Margin="0,4">
+                        <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                            <TextBlock Text="Chart window" VerticalAlignment="Center" />
+                            <ComboBox ItemsSource="{Binding WindowOptions}" SelectedItem="{Binding SelectedWindow}" DisplayMemberPath="Label" />
+                        </StackPanel>
+                        <TextBlock Text="Whole-server CPU and memory" FontWeight="SemiBold" VerticalAlignment="Center" />
+                    </DockPanel>
+                    <controls:ChartPanel x:Name="ServerCharts" ChartHeight="280" />
+                </DockPanel>
+            </TabItem>
+
+            <!-- History -->
+            <TabItem Header="History" DataContext="{Binding History}">
+                <DockPanel>
+                    <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="0,6">
+                        <TextBlock Text="Show" VerticalAlignment="Center" />
+                        <ComboBox ItemsSource="{Binding Kinds}" SelectedItem="{Binding SelectedKind}" DisplayMemberPath="Label" />
+                        <ComboBox ItemsSource="{Binding Entities}" SelectedItem="{Binding SelectedEntity}" MinWidth="220" />
+                        <ComboBox ItemsSource="{Binding Ranges}" SelectedItem="{Binding SelectedRange}" DisplayMemberPath="Label" />
+                        <Button Content="Refresh" Command="{Binding RefreshCommand}" />
+                        <TextBlock Text="{Binding StatusText}" Foreground="{StaticResource MutedBrush}" VerticalAlignment="Center" Margin="8,0" />
+                    </StackPanel>
+                    <controls:ChartPanel x:Name="HistoryCharts" />
+                </DockPanel>
+            </TabItem>
+
+            <!-- Collector health -->
+            <TabItem Header="Collectors">
+                <DockPanel>
+                    <TextBlock DockPanel.Dock="Top" TextWrapping="Wrap" Margin="0,6" Foreground="{StaticResource MutedBrush}"
+                               Text="Where each number comes from and whether that source is working. A warning here explains an empty column or chart." />
+                    <DataGrid ItemsSource="{Binding Health}" RowHeight="NaN">
+                        <DataGrid.Columns>
+                            <DataGridTemplateColumn Width="30">
+                                <DataGridTemplateColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <TextBlock Text="{Binding Icon}" HorizontalAlignment="Center" VerticalAlignment="Center">
+                                            <TextBlock.Style>
+                                                <Style TargetType="TextBlock">
+                                                    <Setter Property="Foreground" Value="{StaticResource BadBrush}" />
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding Ok}" Value="True">
+                                                            <Setter Property="Foreground" Value="{StaticResource OkBrush}" />
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </TextBlock.Style>
+                                        </TextBlock>
+                                    </DataTemplate>
+                                </DataGridTemplateColumn.CellTemplate>
+                            </DataGridTemplateColumn>
+                            <DataGridTextColumn Header="Source" Binding="{Binding Name}" Width="230" ElementStyle="{StaticResource TextCell}" />
+                            <DataGridTextColumn Header="Status" Binding="{Binding Message}" Width="*">
+                                <DataGridTextColumn.ElementStyle>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="TextWrapping" Value="Wrap" />
+                                        <Setter Property="Margin" Value="6,4" />
+                                    </Style>
+                                </DataGridTextColumn.ElementStyle>
+                            </DataGridTextColumn>
+                        </DataGrid.Columns>
+                    </DataGrid>
+                </DockPanel>
+            </TabItem>
+        </TabControl>
+    </DockPanel>
+</Window>

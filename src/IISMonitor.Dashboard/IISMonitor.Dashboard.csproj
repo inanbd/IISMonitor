@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- WPF dashboard: live views and history. Connects to the service, or runs the collector itself. -->
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <!-- SkiaSharp's WPF views (used by ScottPlot) target Windows 10 2004+; Server 2022 and 2025 qualify. -->
+    <TargetFramework>net10.0-windows10.0.19041.0</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <RootNamespace>IISMonitor.Dashboard</RootNamespace>
+    <AssemblyName>IISMonitor</AssemblyName>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="ScottPlot.WPF" Version="5.1.59" />
+    <PackageReference Include="System.ServiceProcess.ServiceController" Version="10.0.12" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\IISMonitor.Collectors\IISMonitor.Collectors.csproj" />
+  </ItemGroup>
+
+</Project>
