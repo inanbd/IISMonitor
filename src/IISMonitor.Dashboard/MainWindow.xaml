@@ -103,8 +103,58 @@
         </UniformGrid>
 
         <TabControl x:Name="Tabs" Margin="12,8,12,8" SelectionChanged="OnTabChanged">
+            <!-- Overview: all app pools compared on four charts -->
+            <TabItem x:Name="OverviewTab" Header="Overview">
+                <DockPanel>
+                    <DockPanel DockPanel.Dock="Top" Margin="0,4">
+                        <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                            <TextBlock Text="RAM shows" VerticalAlignment="Center" />
+                            <ComboBox ItemsSource="{Binding Overview.MemoryOptions}" SelectedItem="{Binding Overview.SelectedMemory}"
+                                      DisplayMemberPath="Label" MinWidth="190" />
+                            <TextBlock Text="Chart window" VerticalAlignment="Center" Margin="8,0,0,0" />
+                            <ComboBox ItemsSource="{Binding WindowOptions}" SelectedItem="{Binding SelectedWindow}" DisplayMemberPath="Label" />
+                        </StackPanel>
+                        <TextBlock VerticalAlignment="Center" TextWrapping="Wrap" Foreground="{StaticResource MutedBrush}"
+                                   Text="One line per app pool. Network = traffic of the pool's websites plus its own outbound calls (databases, APIs). Hover a chart to read every pool's value." />
+                    </DockPanel>
+
+                    <!-- Pick list; each line key is also the charts' legend -->
+                    <Border DockPanel.Dock="Left" Width="250" Margin="0,4,8,4" Background="White"
+                            BorderBrush="#D5DCE4" BorderThickness="1" CornerRadius="4">
+                        <DockPanel>
+                            <StackPanel DockPanel.Dock="Top" Margin="10,8,10,4">
+                                <TextBlock Text="App pools on the charts" FontWeight="SemiBold" />
+                                <TextBlock Text="{Binding Overview.SelectionSummary}" Foreground="{StaticResource MutedBrush}" FontSize="11" />
+                                <StackPanel Orientation="Horizontal" Margin="0,6,0,0">
+                                    <Button Content="Tick all" Command="{Binding Overview.SelectAllCommand}" Margin="0,0,4,0" />
+                                    <Button Content="Untick all" Command="{Binding Overview.SelectNoneCommand}" />
+                                </StackPanel>
+                            </StackPanel>
+                            <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Margin="0,0,0,6">
+                                <ItemsControl ItemsSource="{Binding Overview.Pools}" Margin="10,0,6,0">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <CheckBox IsChecked="{Binding IsChecked}" Margin="0,3" VerticalContentAlignment="Center"
+                                                      ToolTip="{Binding Name}">
+                                                <StackPanel Orientation="Horizontal">
+                                                    <Line X1="0" X2="18" Y1="0" Y2="0" StrokeThickness="2" VerticalAlignment="Center"
+                                                          Stroke="{Binding Stroke}" StrokeDashArray="{Binding DashArray}" Margin="2,0,6,0" />
+                                                    <TextBlock Text="{Binding Name}" TextTrimming="CharacterEllipsis" MaxWidth="170" />
+                                                </StackPanel>
+                                            </CheckBox>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </ScrollViewer>
+                        </DockPanel>
+                    </Border>
+
+                    <controls:ChartPanel x:Name="OverviewCharts" ChartHeight="270" MaxColumns="2" ShowLegend="False" />
+                </DockPanel>
+            </TabItem>
+
             <!-- App pools -->
-            <TabItem Header="App pools">
+            <TabItem x:Name="PoolsTab" Header="App pools">
                 <Grid>
                     <Grid.RowDefinitions>
                         <RowDefinition Height="2*" MinHeight="120" />
@@ -153,7 +203,7 @@
                                 <DataGridTextColumn Header="Threads" Binding="{Binding Threads}" Width="65" ElementStyle="{StaticResource NumberCell}" />
                                 <DataGridTextColumn Header="Handles" Binding="{Binding Handles}" Width="70" ElementStyle="{StaticResource NumberCell}" />
                                 <DataGridTextColumn Header="Disk read / write" Binding="{Binding DiskText}" Width="150" ElementStyle="{StaticResource NumberCell}" />
-                                <DataGridTextColumn Header="Network sent / recv" Binding="{Binding NetworkText}" Width="150" ElementStyle="{StaticResource NumberCell}" />
+                                <DataGridTextColumn Header="Outbound sent / recv" Binding="{Binding NetworkText}" Width="150" ElementStyle="{StaticResource NumberCell}" />
                                 <DataGridTextColumn Header="DB" Binding="{Binding DbText}" Width="150" ElementStyle="{StaticResource NumberCell}" />
                                 <DataGridTextColumn Header="Started" Binding="{Binding Started}" Width="130" ElementStyle="{StaticResource TextCell}" />
                             </DataGrid.Columns>
@@ -164,7 +214,7 @@
             </TabItem>
 
             <!-- Sites -->
-            <TabItem Header="Sites">
+            <TabItem x:Name="SitesTab" Header="Sites">
                 <Grid>
                     <Grid.RowDefinitions>
                         <RowDefinition Height="2*" MinHeight="120" />
@@ -206,7 +256,7 @@
             </TabItem>
 
             <!-- Server -->
-            <TabItem Header="Server">
+            <TabItem x:Name="ServerTab" Header="Server">
                 <DockPanel>
                     <DockPanel DockPanel.Dock="Top" Margin="0,4">
                         <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
@@ -220,7 +270,7 @@
             </TabItem>
 
             <!-- History -->
-            <TabItem Header="History" DataContext="{Binding History}">
+            <TabItem x:Name="HistoryTab" Header="History" DataContext="{Binding History}">
                 <DockPanel>
                     <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="0,6">
                         <TextBlock Text="Show" VerticalAlignment="Center" />
@@ -230,7 +280,7 @@
                         <Button Content="Refresh" Command="{Binding RefreshCommand}" />
                         <TextBlock Text="{Binding StatusText}" Foreground="{StaticResource MutedBrush}" VerticalAlignment="Center" Margin="8,0" />
                     </StackPanel>
-                    <controls:ChartPanel x:Name="HistoryCharts" />
+                    <controls:ChartPanel x:Name="HistoryCharts" AllowZoom="True" TimeFormat="g" />
                 </DockPanel>
             </TabItem>
 

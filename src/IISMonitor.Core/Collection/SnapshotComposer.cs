@@ -183,6 +183,19 @@ public sealed class SnapshotComposer(string machineName, int processorCount)
             }
         }
 
+        // Site HTTP traffic is credited to the pool of the site's root application.
+        var httpByPool = new Dictionary<string, (double Sent, double Received)>(StringComparer.OrdinalIgnoreCase);
+        if (input.Counters is { } siteCounters)
+        {
+            foreach (var site in input.Topology?.Sites ?? [])
+            {
+                if (!PerfInstanceName.TryGet(siteCounters.Sites, site.Name, out var values))
+                    continue;
+                var current = httpByPool.GetValueOrDefault(site.RootAppPool);
+                httpByPool[site.RootAppPool] = (current.Sent + (values.BytesSentPerSec ?? 0), current.Received + (values.BytesReceivedPerSec ?? 0));
+            }
+        }
+
         var byPool = members
             .GroupBy(kv => kv.Value.AppPool, StringComparer.OrdinalIgnoreCase)
             .ToDictionary(g => g.Key, g => g.Select(kv => processes[kv.Key]).OrderBy(p => p.IsWorkerProcess ? 0 : 1).ThenBy(p => p.Pid).ToList(),
@@ -217,6 +230,13 @@ public sealed class SnapshotComposer(string machineName, int processorCount)
                     ? null
                     : input.ResponseByPool.GetValueOrDefault(info.Name) ?? new ResponseStats(),
             };
+
+            if (input.Counters is not null)
+            {
+                var http = httpByPool.GetValueOrDefault(info.Name);
+                pool.HttpBytesSentPerSec = http.Sent;
+                pool.HttpBytesReceivedPerSec = http.Received;
+            }
 
             if (input.DbSessionsByPid is { } dmv)
             {

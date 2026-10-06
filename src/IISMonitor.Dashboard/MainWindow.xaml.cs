@@ -23,6 +23,7 @@ public partial class MainWindow : Window
         };
         DataContext = _viewModel;
 
+        OverviewCharts.SetCharts(OverviewViewModel.Charts);
         PoolCharts.SetCharts(MetricCatalog.Charts(EntityKind.AppPool));
         SiteCharts.SetCharts(MetricCatalog.Charts(EntityKind.Site));
         ServerCharts.SetCharts(MetricCatalog.Charts(EntityKind.Server));
@@ -38,25 +39,22 @@ public partial class MainWindow : Window
         if (!ReferenceEquals(e.OriginalSource, Tabs))
             return;
         RenderLiveCharts();
-        if (Tabs.SelectedIndex == 3)
+        if (ReferenceEquals(Tabs.SelectedItem, HistoryTab))
             _ = _viewModel.History.ReloadEntitiesAsync();
     }
 
     /// <summary>Only the visible tab's charts are drawn.</summary>
     private void RenderLiveCharts()
     {
-        switch (Tabs.SelectedIndex)
-        {
-            case 0:
-                Render(PoolCharts, EntityKind.AppPool, _viewModel.SelectedPool?.Name);
-                break;
-            case 1:
-                Render(SiteCharts, EntityKind.Site, _viewModel.SelectedSite?.Name);
-                break;
-            case 2:
-                Render(ServerCharts, EntityKind.Server, "");
-                break;
-        }
+        var tab = Tabs.SelectedItem;
+        if (ReferenceEquals(tab, OverviewTab))
+            OverviewCharts.Render(_viewModel.OverviewSeries, _viewModel.LiveRange(), _viewModel.OverviewTitle);
+        else if (ReferenceEquals(tab, PoolsTab))
+            Render(PoolCharts, EntityKind.AppPool, _viewModel.SelectedPool?.Name);
+        else if (ReferenceEquals(tab, SitesTab))
+            Render(SiteCharts, EntityKind.Site, _viewModel.SelectedSite?.Name);
+        else if (ReferenceEquals(tab, ServerTab))
+            Render(ServerCharts, EntityKind.Server, "");
     }
 
     private void Render(Controls.ChartPanel panel, EntityKind kind, string? name)

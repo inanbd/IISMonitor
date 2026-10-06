@@ -61,8 +61,11 @@ public static class MetricCatalog
         Avg("handles", "Handles", MetricUnit.Count),
         Avg("disk_read", "Disk read", MetricUnit.BytesPerSecond),
         Avg("disk_write", "Disk write", MetricUnit.BytesPerSecond),
-        Avg("net_sent", "Network sent", MetricUnit.BytesPerSecond),
-        Avg("net_recv", "Network received", MetricUnit.BytesPerSecond),
+        Avg("http_sent", "Site traffic sent", MetricUnit.BytesPerSecond),
+        Avg("http_recv", "Site traffic received", MetricUnit.BytesPerSecond),
+        Avg("net_sent", "Outbound sent", MetricUnit.BytesPerSecond),
+        Avg("net_recv", "Outbound received", MetricUnit.BytesPerSecond),
+        Avg("net_total", "Network total", MetricUnit.BytesPerSecond),
         Avg("db_conn", "DB connections (TCP)", MetricUnit.Count),
         Max("db_conn_max", "DB connections (max)", MetricUnit.Count, "db_conn"),
         Avg("db_sessions", "DB sessions (SQL)", MetricUnit.Count),
@@ -96,7 +99,7 @@ public static class MetricCatalog
         new("CPU", MetricUnit.Percent, ["cpu", "cpu_max"]),
         new("Memory", MetricUnit.Bytes, ["private_bytes", "working_set"]),
         new("Disk I/O", MetricUnit.BytesPerSecond, ["disk_read", "disk_write"]),
-        new("Network (outbound from the pool)", MetricUnit.BytesPerSecond, ["net_sent", "net_recv"]),
+        new("Network (site traffic + outbound)", MetricUnit.BytesPerSecond, ["http_sent", "http_recv", "net_sent", "net_recv"]),
         new("Database connections", MetricUnit.Count, ["db_conn", "db_conn_max", "db_sessions", "db_active"]),
         new("Requests/sec", MetricUnit.PerSecond, ["rps"]),
         new("Response time", MetricUnit.Milliseconds, ["resp_avg", "resp_p95", "resp_max"]),
@@ -149,8 +152,11 @@ public static class MetricCatalog
             ["handles"] = pool.HandleCount,
             ["disk_read"] = pool.DiskReadBytesPerSec,
             ["disk_write"] = pool.DiskWriteBytesPerSec,
+            ["http_sent"] = pool.HttpBytesSentPerSec,
+            ["http_recv"] = pool.HttpBytesReceivedPerSec,
             ["net_sent"] = pool.NetworkSentBytesPerSec,
             ["net_recv"] = pool.NetworkReceivedBytesPerSec,
+            ["net_total"] = NetworkTotal(pool),
             ["db_conn"] = pool.DbConnections,
             ["db_sessions"] = pool.DbSessions,
             ["db_active"] = pool.DbActiveSessions,
@@ -181,6 +187,22 @@ public static class MetricCatalog
         ["mem_used"] = server.MemoryUsedBytes,
         ["mem_total"] = server.MemoryTotalBytes,
     };
+
+    /// <summary>
+    /// Everything the pool moves over the network: its sites' HTTP traffic plus its own outbound
+    /// traffic, both directions. Empty only when neither source is available.
+    /// </summary>
+    public static double? NetworkTotal(AppPoolMetrics pool)
+    {
+        double? total = null;
+        foreach (var part in new[] { pool.HttpBytesSentPerSec, pool.HttpBytesReceivedPerSec, pool.NetworkSentBytesPerSec, pool.NetworkReceivedBytesPerSec })
+        {
+            if (part is { } value)
+                total = (total ?? 0) + value;
+        }
+
+        return total;
+    }
 
     /// <summary>Adds response-time values; averages and percentiles stay empty when there were no requests.</summary>
     public static void AddResponse(Dictionary<string, double?> values, ResponseStats? response, double seconds)

@@ -6,6 +6,7 @@ using System.Windows.Threading;
 using IISMonitor.Collectors;
 using IISMonitor.Core.Metrics;
 using IISMonitor.Core.Models;
+using IISMonitor.Core.Presentation;
 using IISMonitor.Core.Protocol;
 using IISMonitor.Core.Settings;
 using IISMonitor.Dashboard.Controls;
@@ -28,6 +29,7 @@ public sealed class MainViewModel : ObservableObject, IAsyncDisposable
     private IMonitorBackend? _backend;
     private MonitorSnapshot? _pending;
     private MonitorSnapshot? _latest;
+    private MonitorSnapshot? _shown;
     private int _uiScheduled;
     private bool _syncingSettings;
     private bool _disposed;
@@ -71,6 +73,8 @@ public sealed class MainViewModel : ObservableObject, IAsyncDisposable
         _selectedWindow = WindowOptions[1];
 
         History = new HistoryViewModel(() => _backend, ReportError);
+        Overview = new OverviewViewModel(new DashboardPreferencesStore(DashboardPreferencesStore.DefaultPath));
+        Overview.SelectionChanged += (_, _) => LiveChartsInvalidated?.Invoke(this, EventArgs.Empty);
         StartServiceCommand = new AsyncCommand(StartServiceAsync, ReportError, () => CanStartService);
         EnableResponseTimesCommand = new AsyncCommand(EnableResponseTimesAsync, ReportError, () => _backend is not null);
         TogglePauseCommand = new RelayCommand(() => IsPaused = !IsPaused);
@@ -92,6 +96,7 @@ public sealed class MainViewModel : ObservableObject, IAsyncDisposable
     public ObservableCollection<ProcessRow> SelectedPoolProcesses { get; } = [];
     public ObservableCollection<HealthRow> Health { get; } = [];
     public HistoryViewModel History { get; }
+    public OverviewViewModel Overview { get; }
 
     public IReadOnlyList<IntervalOption> IntervalOptions { get; }
     public IReadOnlyList<WindowOption> WindowOptions { get; }
@@ -204,6 +209,15 @@ public sealed class MainViewModel : ObservableObject, IAsyncDisposable
 
         return result;
     }
+
+    /// <summary>One line per ticked app pool for an Overview chart.</summary>
+    public IReadOnlyList<ChartSeries> OverviewSeries(ChartDefinition chart)
+    {
+        var from = DateTime.Now.Subtract(SelectedWindow.Window).ToOADate();
+        return Overview.Series(chart, (pool, key) => _live.Get(EntityKind.AppPool, pool, key, from));
+    }
+
+    public string OverviewTitle(ChartDefinition chart) => Overview.ChartTitle(chart, _shown);
 
     public (double From, double To) LiveRange()
     {
@@ -318,7 +332,9 @@ public sealed class MainViewModel : ObservableObject, IAsyncDisposable
 
     private void ApplySnapshot(MonitorSnapshot snapshot)
     {
+        _shown = snapshot;
         MachineName = snapshot.Server.MachineName;
+        Overview.Sync(snapshot.AppPools);
         Sync(Pools, snapshot.AppPools, p => p.Name, name => new AppPoolRow(name), (row, m) => row.Update(m));
         Sync(Sites, snapshot.Sites, s => s.Name, name => new SiteRow(name), (row, m) => row.Update(m));
         RefreshSelectedPool();

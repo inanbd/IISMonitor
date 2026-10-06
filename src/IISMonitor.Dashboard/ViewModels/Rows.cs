@@ -37,8 +37,12 @@ public sealed class AppPoolRow : ObservableObject
     public double DiskTotal => (Metrics.DiskReadBytesPerSec ?? 0) + (Metrics.DiskWriteBytesPerSec ?? 0);
     public string DiskText => Pair(MetricUnit.BytesPerSecond, Metrics.DiskReadBytesPerSec, Metrics.DiskWriteBytesPerSec);
 
-    public double NetworkTotal => (Metrics.NetworkSentBytesPerSec ?? 0) + (Metrics.NetworkReceivedBytesPerSec ?? 0);
-    public string NetworkText => Pair(MetricUnit.BytesPerSecond, Metrics.NetworkSentBytesPerSec, Metrics.NetworkReceivedBytesPerSec);
+    /// <summary>Site traffic plus outbound traffic, as on the Overview tab.</summary>
+    public double NetworkTotal => MetricCatalog.NetworkTotal(Metrics) ?? -1;
+    public string NetworkText => Pair(
+        MetricUnit.BytesPerSecond,
+        SumOrNull(Metrics.HttpBytesSentPerSec, Metrics.NetworkSentBytesPerSec),
+        SumOrNull(Metrics.HttpBytesReceivedPerSec, Metrics.NetworkReceivedBytesPerSec));
 
     public int DbConnections => Metrics.DbConnections ?? -1;
     public string DbConnectionsText => MetricFormatter.Format(MetricUnit.Count, Metrics.DbConnections);
@@ -64,6 +68,8 @@ public sealed class AppPoolRow : ObservableObject
         Metrics = metrics;
         Raise(string.Empty);
     }
+
+    private static double? SumOrNull(double? a, double? b) => a is null && b is null ? null : (a ?? 0) + (b ?? 0);
 
     internal static string Pair(MetricUnit unit, double? first, double? second) =>
         first is null && second is null

@@ -56,6 +56,13 @@ public sealed class AppPoolMetrics
     public double? NetworkSentBytesPerSec { get; set; }
     public double? NetworkReceivedBytesPerSec { get; set; }
 
+    /// <summary>
+    /// HTTP traffic of the sites whose root application runs in this pool (IIS "Web Service" counters).
+    /// HTTP.sys handles this traffic, so it is not part of <see cref="NetworkSentBytesPerSec"/>.
+    /// </summary>
+    public double? HttpBytesSentPerSec { get; set; }
+    public double? HttpBytesReceivedPerSec { get; set; }
+
     /// <summary>Open TCP connections from the pool's processes to SQL Server ports.</summary>
     public int? DbConnections { get; set; }
 
