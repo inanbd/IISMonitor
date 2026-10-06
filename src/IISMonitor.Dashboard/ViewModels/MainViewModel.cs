@@ -56,7 +56,7 @@ public sealed class MainViewModel : ObservableObject, IAsyncDisposable
         _dispatcher = dispatcher;
         IntervalOptions =
         [
-            new(500, "0.5 seconds"), new(1000, "1 second"), new(2000, "2 seconds"), new(5000, "5 seconds"),
+            new(250, "0.25 seconds"), new(500, "0.5 seconds"), new(1000, "1 second"), new(2000, "2 seconds"), new(5000, "5 seconds"),
             new(10_000, "10 seconds"), new(30_000, "30 seconds"), new(60_000, "1 minute"),
         ];
         WindowOptions =
@@ -65,7 +65,7 @@ public sealed class MainViewModel : ObservableObject, IAsyncDisposable
             new(TimeSpan.FromMinutes(15), "Last 15 minutes"), new(TimeSpan.FromMinutes(30), "Last 30 minutes"),
             new(TimeSpan.FromHours(1), "Last hour"),
         ];
-        _selectedInterval = IntervalOptions[1];
+        _selectedInterval = IntervalOptions[2];
         _selectedWindow = WindowOptions[1];
 
         History = new HistoryViewModel(() => _backend, ReportError);

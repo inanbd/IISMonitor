@@ -28,9 +28,10 @@ public sealed class HistoryAggregator
     /// <summary>
     /// Produces the rows for the current window and starts a new one.
     /// </summary>
-    /// <param name="responseBySite">Response stats for the whole window, by site name.</param>
+    /// <param name="responseBySite">Response stats for the whole window, by site name; null when response times aren't traced.</param>
     /// <param name="responseByPool">Response stats for the whole window, by app pool name.</param>
-    /// <param name="loggedSites">Sites (and pools) whose response time is being traced; others get no response values.</param>
+    /// <param name="loggedSites">Sites whose response time is traced; others get no response values. Null means all.</param>
+    /// <param name="loggedPools">App pools serving a traced site; others get no response values. Null means all.</param>
     public List<HistoryRow> Flush(
         DateTime nowUtc,
         IReadOnlyDictionary<string, ResponseStats>? responseBySite,

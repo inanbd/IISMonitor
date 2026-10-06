@@ -18,4 +18,8 @@
     <ProjectReference Include="..\IISMonitor.Core\IISMonitor.Core.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <InternalsVisibleTo Include="IISMonitor.Collectors.Tests" />
+  </ItemGroup>
+
 </Project>
