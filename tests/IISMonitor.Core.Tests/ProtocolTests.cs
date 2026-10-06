@@ -60,6 +60,7 @@ public class ProtocolTests
 
         var received = Channel<MonitorSnapshot>();
         client.SnapshotReceived += (_, s) => received.TryAdd(s);
+        client.Start();
 
         Assert.Equal("first", (await Next(received, cts.Token)).Server.MachineName);
 
@@ -88,6 +89,51 @@ public class ProtocolTests
 
         cts.Cancel();
         await serverTask;
+    }
+
+    [Fact]
+    public async Task First_snapshot_is_not_lost_when_the_subscriber_attaches_late()
+    {
+        var pipeName = "iismonitor-test-" + Guid.NewGuid().ToString("N")[..8];
+        var host = new FakeHost { LatestSnapshot = new MonitorSnapshot { Server = new ServerMetrics { MachineName = "first" } } };
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        var server = new PipeServer(host, () => new NamedPipeServerStream(
+            pipeName, PipeDirection.InOut, NamedPipeServerStream.MaxAllowedServerInstances, PipeTransmissionMode.Byte, PipeOptions.Asynchronous));
+        var serverTask = server.RunAsync(cts.Token);
+
+        await using (var client = await PipeClientBackend.TryConnectAsync(TimeSpan.FromSeconds(10), cts.Token, pipeName))
+        {
+            Assert.NotNull(client);
+
+            // By now the server has long since sent the first snapshot.
+            await Task.Delay(500, cts.Token);
+            var received = Channel<MonitorSnapshot>();
+            client.SnapshotReceived += (_, s) => received.TryAdd(s);
+            client.Start();
+
+            Assert.Equal("first", (await Next(received, cts.Token)).Server.MachineName);
+        }
+
+        cts.Cancel();
+        await serverTask;
+    }
+
+    [Fact]
+    public void In_process_backend_replays_the_latest_snapshot_on_start()
+    {
+        var host = new FakeHost { LatestSnapshot = new MonitorSnapshot { Server = new ServerMetrics { MachineName = "latest" } } };
+        var backend = new InProcessBackend(host);
+        var received = new List<MonitorSnapshot>();
+        backend.SnapshotReceived += (_, s) => received.Add(s);
+
+        host.Publish(new MonitorSnapshot { Server = new ServerMetrics { MachineName = "before start" } });
+        Assert.Empty(received);
+
+        backend.Start();
+        backend.Start();
+        host.Publish(new MonitorSnapshot { Server = new ServerMetrics { MachineName = "after start" } });
+
+        Assert.Equal(["before start", "after start"], received.Select(s => s.Server.MachineName));
     }
 
     [Fact]

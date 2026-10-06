@@ -53,6 +53,13 @@ public interface IMonitorBackend : IAsyncDisposable
     /// <summary>Raised once when the connection to the collector is lost.</summary>
     event EventHandler? Disconnected;
 
+    /// <summary>
+    /// Starts raising <see cref="SnapshotReceived"/> and <see cref="SettingsChanged"/>, beginning with the
+    /// collector's latest snapshot. Subscribe first, then call this, so the first snapshot isn't missed.
+    /// Calling it again does nothing.
+    /// </summary>
+    void Start();
+
     Task<MonitorSettings> UpdateSettingsAsync(MonitorSettings settings, CancellationToken cancellationToken = default);
 
     Task<HistoryResult> QueryHistoryAsync(HistoryQuery query, CancellationToken cancellationToken = default);

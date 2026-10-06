@@ -10,13 +10,12 @@ public sealed class InProcessBackend : IMonitorBackend
 {
     private readonly IMonitorHost _host;
     private readonly IAsyncDisposable? _ownedHost;
+    private int _started;
 
     public InProcessBackend(IMonitorHost host, IAsyncDisposable? ownedHost = null)
     {
         _host = host;
         _ownedHost = ownedHost;
-        _host.SnapshotProduced += OnSnapshot;
-        _host.SettingsChanged += OnSettings;
     }
 
     public string Description => "Standalone";
@@ -31,6 +30,20 @@ public sealed class InProcessBackend : IMonitorBackend
 
     // The engine lives in this process, so the connection can't drop.
     public event EventHandler? Disconnected { add { } remove { } }
+
+    public void Start()
+    {
+        if (Interlocked.Exchange(ref _started, 1) != 0)
+            return;
+
+        _host.SnapshotProduced += OnSnapshot;
+        _host.SettingsChanged += OnSettings;
+
+        // The engine may already have produced snapshots; replay the latest. A new one can race
+        // with this replay, so subscribers should ignore snapshots older than the last one seen.
+        if (_host.LatestSnapshot is { } latest)
+            SnapshotReceived?.Invoke(this, latest);
+    }
 
     public Task<MonitorSettings> UpdateSettingsAsync(MonitorSettings settings, CancellationToken cancellationToken = default) =>
         _host.UpdateSettingsAsync(settings, cancellationToken);

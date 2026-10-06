@@ -15,6 +15,7 @@ public sealed class PipeClientBackend : IMonitorBackend
 
     private readonly MessageConnection _connection;
     private readonly CancellationTokenSource _cts = new();
+    private readonly object _startGate = new();
     private readonly ConcurrentDictionary<long, TaskCompletionSource<JsonElement?>> _pending = new();
     private long _nextId;
     private int _disconnected;
@@ -67,9 +68,8 @@ public sealed class PipeClientBackend : IMonitorBackend
                     $"The IISMonitor service speaks protocol version {payload.ProtocolVersion}, this dashboard needs {PipeProtocol.Version}. Install matching versions.");
             }
 
-            var backend = new PipeClientBackend(connection, payload);
-            backend._readLoop = Task.Run(backend.ReadLoopAsync);
-            return backend;
+            // Reading starts in Start(), once the caller has subscribed; until then messages wait in the pipe.
+            return new PipeClientBackend(connection, payload);
         }
         catch (Exception e) when (!cancellationToken.IsCancellationRequested
                                   && e is OperationCanceledException or TimeoutException or IOException)
@@ -83,6 +83,12 @@ public sealed class PipeClientBackend : IMonitorBackend
             await connection.DisposeAsync().ConfigureAwait(false);
             throw;
         }
+    }
+
+    public void Start()
+    {
+        lock (_startGate)
+            _readLoop ??= Task.Run(ReadLoopAsync);
     }
 
     public async Task<MonitorSettings> UpdateSettingsAsync(MonitorSettings settings, CancellationToken cancellationToken = default)
@@ -106,6 +112,8 @@ public sealed class PipeClientBackend : IMonitorBackend
         if (Volatile.Read(ref _disconnected) != 0)
             throw new IOException("Not connected to the IISMonitor service.");
 
+        // Replies arrive through the read loop.
+        Start();
         var id = Interlocked.Increment(ref _nextId);
         var completion = new TaskCompletionSource<JsonElement?>(TaskCreationOptions.RunContinuationsAsynchronously);
         _pending[id] = completion;
@@ -181,8 +189,11 @@ public sealed class PipeClientBackend : IMonitorBackend
         Interlocked.Exchange(ref _disconnected, 1);
         _cts.Cancel();
         await _connection.DisposeAsync().ConfigureAwait(false);
-        if (_readLoop is not null)
-            await _readLoop.ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
+        Task? readLoop;
+        lock (_startGate)
+            readLoop = _readLoop;
+        if (readLoop is not null)
+            await readLoop.ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
         _cts.Dispose();
     }
 }

@@ -23,6 +23,8 @@ public sealed class MainViewModel : ObservableObject, IAsyncDisposable
 
     private readonly Dispatcher _dispatcher;
     private readonly LiveSeriesStore _live = new();
+    private readonly object _snapshotGate = new();
+    private DateTime _lastSnapshotUtc = DateTime.MinValue;
     private IMonitorBackend? _backend;
     private MonitorSnapshot? _pending;
     private MonitorSnapshot? _latest;
@@ -261,10 +263,16 @@ public sealed class MainViewModel : ObservableObject, IAsyncDisposable
     private async Task UseBackendAsync(IMonitorBackend backend)
     {
         var old = _backend;
-        _backend = backend;
+        lock (_snapshotGate)
+        {
+            _backend = backend;
+            _lastSnapshotUtc = DateTime.MinValue;
+        }
+
         backend.SnapshotReceived += OnSnapshotReceived;
         backend.SettingsChanged += OnBackendSettingsChanged;
         backend.Disconnected += OnDisconnected;
+        backend.Start();
         SourceText = backend.Description;
         Raise(nameof(IsStandalone));
         OnSettingsChanged(backend.Settings);
@@ -282,10 +290,15 @@ public sealed class MainViewModel : ObservableObject, IAsyncDisposable
 
     private void OnSnapshotReceived(object? sender, MonitorSnapshot snapshot)
     {
-        if (!ReferenceEquals(sender, _backend))
-            return;
+        lock (_snapshotGate)
+        {
+            // Ignore other backends and replays of a snapshot that was already handled.
+            if (!ReferenceEquals(sender, _backend) || snapshot.TimestampUtc <= _lastSnapshotUtc)
+                return;
+            _lastSnapshotUtc = snapshot.TimestampUtc;
+            _live.Add(snapshot);
+        }
 
-        _live.Add(snapshot);
         Volatile.Write(ref _pending, snapshot);
         if (Interlocked.Exchange(ref _uiScheduled, 1) == 0)
             _dispatcher.BeginInvoke(DispatcherPriority.Background, ApplyPending);

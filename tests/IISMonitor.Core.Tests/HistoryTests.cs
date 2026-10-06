@@ -16,8 +16,9 @@ public sealed class HistoryTests : IDisposable
         {
             Directory.Delete(_directory, recursive: true);
         }
-        catch (IOException)
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
         {
+            // Best effort: Windows can hold SQLite files open briefly after the pools are cleared.
         }
     }
 
