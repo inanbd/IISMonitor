@@ -1,0 +1,63 @@
+using IISMonitor.Core.History;
+using IISMonitor.Core.Metrics;
+using IISMonitor.Core.Models;
+using IISMonitor.Core.Settings;
+
+namespace IISMonitor.Core.Protocol;
+
+public sealed class CommandResult
+{
+    public bool Success { get; set; }
+    public string Message { get; set; } = "";
+
+    public static CommandResult Ok(string message) => new() { Success = true, Message = message };
+
+    public static CommandResult Fail(string message) => new() { Success = false, Message = message };
+}
+
+/// <summary>What the collector (the Windows service, or the engine inside the dashboard) offers.</summary>
+public interface IMonitorHost
+{
+    MonitorSettings Settings { get; }
+
+    MonitorSnapshot? LatestSnapshot { get; }
+
+    event EventHandler<MonitorSnapshot>? SnapshotProduced;
+
+    event EventHandler<MonitorSettings>? SettingsChanged;
+
+    Task<MonitorSettings> UpdateSettingsAsync(MonitorSettings settings, CancellationToken cancellationToken);
+
+    Task<HistoryResult> QueryHistoryAsync(HistoryQuery query, CancellationToken cancellationToken);
+
+    Task<List<string>> ListHistoryEntitiesAsync(EntityKind kind, CancellationToken cancellationToken);
+
+    /// <summary>Turns on IIS's ETW log target (and the log fields response-time tracking needs) for all sites.</summary>
+    Task<CommandResult> EnableIisEtwLoggingAsync(CancellationToken cancellationToken);
+}
+
+/// <summary>The dashboard's view of a collector, local or over the named pipe.</summary>
+public interface IMonitorBackend : IAsyncDisposable
+{
+    /// <summary>Where the data comes from, for display ("Windows service", "Standalone").</summary>
+    string Description { get; }
+
+    bool IsStandalone { get; }
+
+    MonitorSettings Settings { get; }
+
+    event EventHandler<MonitorSnapshot>? SnapshotReceived;
+
+    event EventHandler<MonitorSettings>? SettingsChanged;
+
+    /// <summary>Raised once when the connection to the collector is lost.</summary>
+    event EventHandler? Disconnected;
+
+    Task<MonitorSettings> UpdateSettingsAsync(MonitorSettings settings, CancellationToken cancellationToken = default);
+
+    Task<HistoryResult> QueryHistoryAsync(HistoryQuery query, CancellationToken cancellationToken = default);
+
+    Task<List<string>> ListHistoryEntitiesAsync(EntityKind kind, CancellationToken cancellationToken = default);
+
+    Task<CommandResult> EnableIisEtwLoggingAsync(CancellationToken cancellationToken = default);
+}
