@@ -20,7 +20,8 @@ Target platforms: **Windows Server 2022 and 2025** (IIS 10), x64.
 | CPU %, private memory, working set, threads, handles | app pool and each of its processes | Win32 process APIs on each `w3wp.exe` and every process it started |
 | Process count | app pool | `w3wp.exe` per pool (several for web gardens) plus child processes (out-of-process ASP.NET Core, PHP FastCGI, iisnode, …) |
 | Disk read/write bytes/sec | app pool, process | Kernel ETW file I/O events, the same data Resource Monitor uses. If ETW is off, process I/O counters are used instead |
-| Network sent/received bytes/sec | app pool, process | Kernel ETW TCP/UDP events. This is the pool's **outbound** traffic (SQL Server, external APIs) |
+| Network sent/received bytes/sec | app pool | The HTTP traffic of the sites the pool serves (IIS `Web Service` counters, credited to the pool of each site's root application) **plus** the pool's own outbound traffic |
+| Outbound sent/received bytes/sec | app pool, process | Kernel ETW TCP/UDP events: traffic the pool's processes create themselves (SQL Server, external APIs) |
 | Bandwidth (HTTP) bytes/sec | site | IIS `Web Service` performance counters |
 | Requests/sec, current connections | site | IIS `Web Service` performance counters |
 | Requests/sec, active requests | app pool | IIS `W3SVC_W3WP` performance counters |
@@ -37,8 +38,10 @@ Target platforms: **Windows Server 2022 and 2025** (IIS 10), x64.
    between them. Requests, bandwidth and response time are still per site. One pool per site
    gives the clearest picture.
 2. **Incoming HTTP traffic doesn't go through `w3wp.exe`.** The kernel driver HTTP.sys owns
-   ports 80/443, so Windows charges that traffic to the System process. That's why site
-   bandwidth comes from IIS counters, and pool "network" is outbound traffic only.
+   ports 80/443, so Windows charges that traffic to the System process. That's why website
+   traffic comes from IIS counters. A pool's network total adds its sites' website traffic
+   (credited to the pool running each site's root application) to the outbound traffic its
+   processes create; the per-process numbers are outbound only.
 3. **Live response times need IIS's ETW log target.** Click **Enable response times** in the
    toolbar once. It sets the W3C log target to `File, ETW` (log files are still written as
    before) and switches on the log fields `s-sitename`, `cs-uri-stem`, `sc-status` and
@@ -123,6 +126,15 @@ You can also run `IISMonitor.exe` without installing the service. It then collec
 
 ## Using the dashboard
 
+- **Overview** (opens first): four live charts comparing app pools, one line per pool:
+  **CPU**, **RAM** (switch between working set, the RAM in use, and private bytes, what IIS's
+  private-memory recycling limit watches), **requests/sec** and **network** (website traffic
+  plus outbound traffic). Each chart title shows the current total of the ticked pools. Tick
+  or untick pools in the list on the left, which is also the legend. Every pool starts ticked,
+  including pools created later; after eight pools the colors repeat with dashed, then dotted,
+  lines. Ticks, colors and the RAM choice are remembered (per Windows user, in
+  `%LocalAppData%\IISMonitor\dashboard.json`). Hover any chart to read every line's value at
+  that moment.
 - **App pools**: one row per pool. Select a pool to see its processes and live charts for CPU,
   memory, disk, network, database connections, requests, response time, queue, errors and
   process count.
