@@ -2,8 +2,8 @@ using System.Globalization;
 using IISMonitor.Core.Metrics;
 using IISMonitor.Core.Presentation;
 using ScottPlot;
-using ScottPlot.AxisPanels;
 using ScottPlot.TickGenerators;
+using ScottPlot.TickGenerators.TimeUnits;
 
 namespace IISMonitor.Dashboard.Controls;
 
@@ -27,7 +27,14 @@ public static class ChartRenderer
 
     public static void ApplyStyle(Plot plot)
     {
-        plot.Axes.DateTimeTicksBottom();
+        var timeAxis = plot.Axes.DateTimeTicksBottom();
+        if (timeAxis.TickGenerator is DateTimeAutomatic ticks)
+        {
+            // Decided when ticks are generated, so zooming or a sliding live window always gets
+            // labels that match the current tick spacing and visible span.
+            ticks.LabelFormatter = time => FormatTick(time, ticks.TimeUnit, plot.Axes.Bottom.Range.Span);
+        }
+
         plot.Axes.Bottom.TickLabelStyle.FontSize = 10;
         plot.Axes.Left.TickLabelStyle.FontSize = 10;
         plot.Axes.Left.Label.FontSize = 11;
@@ -41,28 +48,31 @@ public static class ChartRenderer
     }
 
     /// <summary>
-    /// Time labels sized to the visible span: seconds for a few minutes, minutes within a day,
-    /// date and time beyond that.
+    /// A time-axis label: seconds when ticks are seconds apart, minutes otherwise, with the date
+    /// added once the visible span reaches a day.
     /// </summary>
-    public static Func<DateTime, string> TimeLabelFormat(double spanDays) => spanDays switch
+    public static string FormatTick(DateTime time, ITimeUnit? tickUnit, double visibleDays)
     {
-        <= 15.0 / 1440 => d => d.ToString("T", CultureInfo.CurrentCulture),
-        < 1 => d => d.ToString("t", CultureInfo.CurrentCulture),
-        _ => d => d.ToString("MMM d", CultureInfo.CurrentCulture) + " " + d.ToString("t", CultureInfo.CurrentCulture),
-    };
+        var culture = CultureInfo.CurrentCulture;
+        var seconds = tickUnit is Second or Decisecond or Centisecond or Millisecond;
+        var clock = time.ToString(seconds ? "T" : "t", culture);
+        return visibleDays >= 1 ? time.ToString("MMM d", culture) + " " + clock : clock;
+    }
 
     /// <summary>
     /// Clears and redraws the chart. Returns the divisor applied to Y values (e.g. 1024² for MB),
     /// which hover read-outs need to map the axis back to real values.
     /// </summary>
     /// <param name="xRange">Fixed X range (OLE automation dates), or null to fit the data.</param>
+    /// <param name="emptyText">Message shown when there are no series at all.</param>
     public static double Draw(
         Plot plot,
         ChartDefinition definition,
         string title,
         IReadOnlyList<ChartSeries> series,
         (double From, double To)? xRange,
-        bool showLegend)
+        bool showLegend,
+        string? emptyText = null)
     {
         plot.Clear();
         plot.Title(title);
@@ -91,7 +101,7 @@ public static class ChartRenderer
 
         if (drawable.Count == 0)
         {
-            var text = plot.Add.Annotation(series.Count == 0 ? "Nothing selected" : "No data yet");
+            var text = plot.Add.Annotation(series.Count == 0 ? emptyText ?? "Nothing selected" : "No data yet");
             text.Alignment = Alignment.MiddleCenter;
         }
 
@@ -105,11 +115,7 @@ public static class ChartRenderer
         var (from, to) = xRange
             ?? (drawable.Count > 0 ? (drawable.Min(x => x.Series.Xs[0]), drawable.Max(x => x.Series.Xs[^1])) : (0d, 0d));
         if (to > from)
-        {
             plot.Axes.SetLimitsX(from, to);
-            if (plot.Axes.Bottom is DateTimeXAxis { TickGenerator: DateTimeAutomatic ticks })
-                ticks.LabelFormatter = TimeLabelFormat(to - from);
-        }
 
         return divisor;
     }

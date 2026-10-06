@@ -53,6 +53,18 @@ public class PresentationTests
     }
 
     [Fact]
+    public void Slot_registry_moves_pools_back_to_solid_lines_when_few_remain()
+    {
+        var registry = new SeriesSlotRegistry(new Dictionary<string, int> { ["A"] = 0, ["Old"] = 1, ["B"] = 9, ["C"] = 12 });
+        Assert.True(registry.Assign(["A", "B", "C"]));
+
+        Assert.Equal(0, registry.SlotOf("A"));
+        var slots = new[] { registry.SlotOf("B"), registry.SlotOf("C") };
+        Assert.All(slots, slot => Assert.InRange(slot, 1, SeriesStyles.Palette.Count - 1));
+        Assert.Equal(2, slots.Distinct().Count());
+    }
+
+    [Fact]
     public void Preferences_round_trip_and_survive_a_corrupt_file()
     {
         var path = Path.Combine(Path.GetTempPath(), "iismonitor-prefs-" + Guid.NewGuid().ToString("N"), "dashboard.json");
@@ -130,6 +142,31 @@ public class PresentationTests
         Assert.Equal(0, pools["ApiPool"].HttpBytesSentPerSec);
         Assert.Equal(1650, MetricCatalog.Extract(pools["Shared"], 1)["net_total"]);
         Assert.Null(new SnapshotComposer("WEB01", 2).Compose(new CollectionInput { Topology = input.Topology }).AppPools[0].HttpBytesSentPerSec);
+    }
+
+    [Fact]
+    public void Unreadable_counter_categories_show_as_unknown_not_zero()
+    {
+        var input = new CollectionInput
+        {
+            TimestampUtc = DateTime.UtcNow,
+            Topology = new IisTopology
+            {
+                AppPools = [new AppPoolInfo { Name = "Shop" }],
+                Sites = [new SiteInfo { Id = 1, Name = "Shop", Applications = [new("/", "Shop")] }],
+            },
+            Counters = new IisCounterValues { SitesAvailable = false, WorkersAvailable = false, QueuesAvailable = false },
+        };
+
+        var snapshot = new SnapshotComposer("WEB01", 2).Compose(input);
+
+        var pool = snapshot.AppPools.Single();
+        Assert.Null(pool.HttpBytesSentPerSec);
+        Assert.Null(pool.RequestsPerSec);
+        Assert.Null(pool.ActiveRequests);
+        Assert.Null(pool.QueueLength);
+        Assert.Null(snapshot.Sites.Single().RequestsPerSec);
+        Assert.Null(snapshot.Sites.Single().CurrentConnections);
     }
 
     [Fact]

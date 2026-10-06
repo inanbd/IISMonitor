@@ -102,6 +102,11 @@ public sealed class IisCounterValues
 
     /// <summary>"HTTP Service Request Queues" current queue size keyed by instance name (app pool name).</summary>
     public Dictionary<string, int> QueueLengths { get; init; } = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>False when that counter category couldn't be read this tick; its values are then unknown, not zero.</summary>
+    public bool SitesAvailable { get; set; } = true;
+    public bool WorkersAvailable { get; set; } = true;
+    public bool QueuesAvailable { get; set; } = true;
 }
 
 public readonly record struct SiteCounterValues(int? CurrentConnections, double? RequestsPerSec, double? BytesSentPerSec, double? BytesReceivedPerSec);

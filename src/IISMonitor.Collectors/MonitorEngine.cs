@@ -216,9 +216,10 @@ public sealed class MonitorEngine : IMonitorHost, IAsyncDisposable
         }
         else
         {
+            const string fallback = " Disk falls back to process I/O counters; pool network shows website traffic only (outbound traffic unavailable).";
             health.Add(settings.EnableKernelTracing
-                ? Fail("Disk & network (kernel ETW)", (_kernel?.Error ?? _kernelError ?? "Not running.") + " Disk falls back to process I/O counters; network is unavailable.")
-                : Ok("Disk & network (kernel ETW)", "Off in settings. Disk uses process I/O counters; network is unavailable."));
+                ? Fail("Disk & network (kernel ETW)", (_kernel?.Error ?? _kernelError ?? "Not running.") + fallback)
+                : Ok("Disk & network (kernel ETW)", "Off in settings." + fallback));
         }
 
         // SQL Server connections.
@@ -226,6 +227,7 @@ public sealed class MonitorEngine : IMonitorHost, IAsyncDisposable
         try
         {
             var tcp = TcpTableReader.ReadAll();
+            _kernel?.SetExcludedConnections(LoopbackPairs.WithinPools(tcp, members));
             dbConnections = DbConnectionCounter.Count(tcp, members.Keys, processes, settings.SqlServerPorts, settings.DetectLocalSqlServerPorts, out var sqlPorts);
             health.Add(Ok("SQL Server connections (TCP)", sqlPorts.Count == 0
                 ? "No SQL Server ports configured."

@@ -127,6 +127,8 @@ public sealed class OverviewViewModel : ObservableObject
     public string ChartTitle(ChartDefinition chart, MonitorSnapshot? latest)
     {
         var name = chart.MetricKeys[0] == MemoryKey ? $"RAM ({SelectedMemory.ShortLabel})" : chart.Title;
+        if (Pools.Count == 0)
+            return name;
         var ticked = Pools.Where(p => p.IsChecked).Select(p => p.Name).ToHashSet(StringComparer.OrdinalIgnoreCase);
         if (ticked.Count == 0)
             return $"{name}: no app pools ticked";
@@ -184,8 +186,15 @@ public sealed class OverviewViewModel : ObservableObject
             toggle.Style = SeriesStyles.ForSlot(_slots.SlotOf(toggle.Name));
 
         if (changed)
+        {
             Raise(nameof(SelectionSummary));
+            // Tick all / Untick all only re-check CanExecute on input; the list changed without any.
+            CommandManager.InvalidateRequerySuggested();
+        }
     }
+
+    /// <summary>What an empty chart says: still waiting for pools, or none ticked.</summary>
+    public string EmptyText => Pools.Count == 0 ? "No app pools found yet" : "No app pools ticked";
 
     /// <summary>Chart lines for the ticked pools, in a stable order so colors and overlaps don't shuffle.</summary>
     public IReadOnlyList<ChartSeries> Series(ChartDefinition chart, Func<string, string, (double[] Xs, double[] Ys)> read)
@@ -222,6 +231,7 @@ public sealed class OverviewViewModel : ObservableObject
             .ToList();
         Save();
         Raise(nameof(SelectionSummary));
+        CommandManager.InvalidateRequerySuggested();
         SelectionChanged?.Invoke(this, EventArgs.Empty);
     }
 

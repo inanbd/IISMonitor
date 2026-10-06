@@ -41,7 +41,9 @@ Target platforms: **Windows Server 2022 and 2025** (IIS 10), x64.
    ports 80/443, so Windows charges that traffic to the System process. That's why website
    traffic comes from IIS counters. A pool's network total adds its sites' website traffic
    (credited to the pool running each site's root application) to the outbound traffic its
-   processes create; the per-process numbers are outbound only.
+   processes create; the per-process numbers are outbound only. Loopback traffic between a
+   pool's own processes (for example w3wp.exe relaying requests to an out-of-process ASP.NET
+   Core app) is not counted again.
 3. **Live response times need IIS's ETW log target.** Click **Enable response times** in the
    toolbar once. It sets the W3C log target to `File, ETW` (log files are still written as
    before) and switches on the log fields `s-sitename`, `cs-uri-stem`, `sc-status` and
@@ -171,7 +173,7 @@ You can also run `IISMonitor.exe` without installing the service. It then collec
 | Symptom | Check |
 |---|---|
 | Response time shows "not traced" | Click **Enable response times**; make sure the *HTTP Logging* role service is installed; the Collectors tab shows how many sites are traced. |
-| Network column shows "—" | Kernel tracing is off or failed (see Collectors). Windows allows up to 8 such system trace sessions at once; other monitoring tools may be using them. |
+| Pool network looks low, or process network shows "—" | Kernel tracing is off or failed (see Collectors), so outbound traffic is missing and pool network is website traffic only. Windows allows up to 8 such system trace sessions at once; other monitoring tools may be using them. |
 | DB connections are 0 but the app uses SQL Server | The SQL Server may listen on a non-default port (add it in Settings), or the app may use shared memory/named pipes to a local SQL Server (add a session connection string). |
 | Dashboard says "Standalone mode" | The service isn't running. Use **Start the service**, or check the Application event log. |
 | Empty performance counter columns | Rebuild counters with `lodctr /R` from an elevated prompt, then restart the service. |

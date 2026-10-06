@@ -185,7 +185,8 @@ public sealed class SnapshotComposer(string machineName, int processorCount)
 
         // Site HTTP traffic is credited to the pool of the site's root application.
         var httpByPool = new Dictionary<string, (double Sent, double Received)>(StringComparer.OrdinalIgnoreCase);
-        if (input.Counters is { } siteCounters)
+        var httpKnown = input.Counters is { SitesAvailable: true } && input.Topology is not null;
+        if (httpKnown && input.Counters is { } siteCounters)
         {
             foreach (var site in input.Topology?.Sites ?? [])
             {
@@ -231,7 +232,7 @@ public sealed class SnapshotComposer(string machineName, int processorCount)
                     : input.ResponseByPool.GetValueOrDefault(info.Name) ?? new ResponseStats(),
             };
 
-            if (input.Counters is not null)
+            if (httpKnown)
             {
                 var http = httpByPool.GetValueOrDefault(info.Name);
                 pool.HttpBytesSentPerSec = http.Sent;
@@ -251,9 +252,14 @@ public sealed class SnapshotComposer(string machineName, int processorCount)
                     .Where(w => w is not null)
                     .Select(w => w!.Value)
                     .ToList();
-                pool.ActiveRequests = workers.Sum(w => w.ActiveRequests ?? 0);
-                pool.RequestsPerSec = workers.Sum(w => w.RequestsPerSec ?? 0);
-                pool.QueueLength = PerfInstanceName.TryGet(counters.QueueLengths, info.Name, out var queue) ? queue : 0;
+                if (counters.WorkersAvailable)
+                {
+                    pool.ActiveRequests = workers.Sum(w => w.ActiveRequests ?? 0);
+                    pool.RequestsPerSec = workers.Sum(w => w.RequestsPerSec ?? 0);
+                }
+
+                if (counters.QueuesAvailable)
+                    pool.QueueLength = PerfInstanceName.TryGet(counters.QueueLengths, info.Name, out var queue) ? queue : 0;
             }
 
             result.Add(pool);
@@ -280,7 +286,7 @@ public sealed class SnapshotComposer(string machineName, int processorCount)
                     : input.ResponseBySite.GetValueOrDefault(site.Id) ?? new ResponseStats(),
             };
 
-            if (input.Counters is { } counters)
+            if (input.Counters is { SitesAvailable: true } counters)
             {
                 var values = PerfInstanceName.TryGet(counters.Sites, site.Name, out var v) ? v : new SiteCounterValues(0, 0, 0, 0);
                 metrics.CurrentConnections = values.CurrentConnections;

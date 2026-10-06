@@ -18,6 +18,7 @@ internal sealed class KernelIoMonitor : IDisposable
     private Thread? _thread;
     private volatile string? _error;
     private long _lostEvents;
+    private HashSet<(int Pid, int LocalPort, int RemotePort)> _excluded = [];
 
     public KernelIoMonitor(string sessionName) => _sessionName = sessionName;
 
@@ -38,10 +39,10 @@ internal sealed class KernelIoMonitor : IDisposable
             | KernelTraceEventParser.Keywords.FileIOInit);
 
         var kernel = _session.Source.Kernel;
-        kernel.TcpIpSend += e => Add(e.ProcessID, Kind.NetSent, e.size);
-        kernel.TcpIpRecv += e => Add(e.ProcessID, Kind.NetReceived, e.size);
-        kernel.TcpIpSendIPV6 += e => Add(e.ProcessID, Kind.NetSent, e.size);
-        kernel.TcpIpRecvIPV6 += e => Add(e.ProcessID, Kind.NetReceived, e.size);
+        kernel.TcpIpSend += e => AddTcp(e.ProcessID, e.sport, e.dport, Kind.NetSent, e.size);
+        kernel.TcpIpRecv += e => AddTcp(e.ProcessID, e.sport, e.dport, Kind.NetReceived, e.size);
+        kernel.TcpIpSendIPV6 += e => AddTcp(e.ProcessID, e.sport, e.dport, Kind.NetSent, e.size);
+        kernel.TcpIpRecvIPV6 += e => AddTcp(e.ProcessID, e.sport, e.dport, Kind.NetReceived, e.size);
         kernel.UdpIpSend += e => Add(e.ProcessID, Kind.NetSent, e.size);
         kernel.UdpIpRecv += e => Add(e.ProcessID, Kind.NetReceived, e.size);
         kernel.UdpIpSendIPV6 += e => Add(e.ProcessID, Kind.NetSent, e.size);
@@ -97,6 +98,23 @@ internal sealed class KernelIoMonitor : IDisposable
     }
 
     public long LostEvents => Interlocked.Read(ref _lostEvents);
+
+    /// <summary>
+    /// TCP connections (owner PID, local port, remote port) whose traffic is not counted, e.g. a
+    /// worker process relaying requests to its own child process over loopback.
+    /// </summary>
+    public void SetExcludedConnections(HashSet<(int Pid, int LocalPort, int RemotePort)> excluded) =>
+        Volatile.Write(ref _excluded, excluded);
+
+    private void AddTcp(int pid, int sourcePort, int destinationPort, Kind kind, int bytes)
+    {
+        var excluded = Volatile.Read(ref _excluded);
+        // Which end is "source" depends on the direction, so check both orientations.
+        if (excluded.Count > 0
+            && (excluded.Contains((pid, sourcePort, destinationPort)) || excluded.Contains((pid, destinationPort, sourcePort))))
+            return;
+        Add(pid, kind, bytes);
+    }
 
     private void Add(int pid, Kind kind, int bytes)
     {

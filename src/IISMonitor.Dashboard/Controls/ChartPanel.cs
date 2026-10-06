@@ -1,11 +1,15 @@
+using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
 using System.Windows.Input;
 using System.Windows.Media;
+using System.Windows.Interop;
 using System.Windows.Shapes;
 using IISMonitor.Core.Metrics;
 using IISMonitor.Core.Presentation;
+using ScottPlot.Interactivity;
+using ScottPlot.Interactivity.UserActionResponses;
 using ScottPlot.Plottables;
 using ScottPlot.WPF;
 using WpfColor = System.Windows.Media.Color;
@@ -58,7 +62,32 @@ public sealed class ChartPanel : UserControl
                 Child = _tooltipRows,
             },
         };
+
+        // A popup is its own window and would otherwise take the mouse from the chart beneath it
+        // (MouseLeave, flicker). Mark the window transparent to input once it exists.
+        _tooltip.Opened += (_, _) =>
+        {
+            if (PresentationSource.FromVisual(_tooltip.Child) is HwndSource source)
+            {
+                var style = GetWindowLongPtr(source.Handle, GwlExStyle);
+                SetWindowLongPtr(source.Handle, GwlExStyle, style | WsExTransparent);
+            }
+        };
+        IsVisibleChanged += (_, _) =>
+        {
+            if (!IsVisible)
+                EndHover();
+        };
     }
+
+    private const int GwlExStyle = -20;
+    private const nint WsExTransparent = 0x20;
+
+    [DllImport("user32.dll", EntryPoint = "GetWindowLongPtrW")]
+    private static extern nint GetWindowLongPtr(nint hWnd, int nIndex);
+
+    [DllImport("user32.dll", EntryPoint = "SetWindowLongPtrW")]
+    private static extern nint SetWindowLongPtr(nint hWnd, int nIndex, nint dwNewLong);
 
     public double ChartHeight { get; set; } = 210;
 
@@ -68,8 +97,11 @@ public sealed class ChartPanel : UserControl
     /// <summary>Shows a legend inside each chart (off when the legend lives outside, as on the Overview tab).</summary>
     public bool ShowLegend { get; set; } = true;
 
-    /// <summary>Mouse zoom and pan. Off for live charts, which re-fit themselves on every update.</summary>
+    /// <summary>Mouse drag to pan/zoom. Off for live charts, which re-fit themselves on every update.</summary>
     public bool AllowZoom { get; set; }
+
+    /// <summary>Message for a chart with nothing to draw (no series at all).</summary>
+    public string? EmptyText { get; set; }
 
     /// <summary>Time format in the hover read-out ("T" = time only, "g" = date and time).</summary>
     public string TimeFormat { get; set; } = "T";
@@ -88,8 +120,7 @@ public sealed class ChartPanel : UserControl
         {
             var plot = new WpfPlot { Height = ChartHeight, Margin = new Thickness(4) };
             ChartRenderer.ApplyStyle(plot.Plot);
-            if (!AllowZoom)
-                plot.UserInputProcessor.Disable();
+            ConfigureInput(plot.UserInputProcessor);
 
             var slot = new ChartSlot(definition, plot);
             plot.MouseMove += (_, e) => OnHover(slot, e);
@@ -106,6 +137,23 @@ public sealed class ChartPanel : UserControl
         }
     }
 
+    /// <summary>
+    /// Keeps the right-click menu (save/copy image) everywhere. The mouse wheel never zooms, so it
+    /// keeps scrolling the page; history charts can be panned and zoomed by dragging.
+    /// </summary>
+    private void ConfigureInput(UserInputProcessor input)
+    {
+        if (AllowZoom)
+        {
+            input.RemoveAll<MouseWheelZoom>();
+            input.RemoveAll<DoubleClickBenchmark>();
+            return;
+        }
+
+        input.UserActionResponses.Clear();
+        input.UserActionResponses.Add(new SingleClickContextMenu(StandardMouseButtons.Right));
+    }
+
     /// <summary>Redraws every chart from the series the callback returns.</summary>
     /// <param name="xRange">Fixed X range (OLE automation dates), or null to fit the data.</param>
     /// <param name="titleFor">Chart title; defaults to the definition's title.</param>
@@ -118,24 +166,37 @@ public sealed class ChartPanel : UserControl
         {
             slot.Series = seriesFor(slot.Definition);
             ChartRenderer.Draw(
-                slot.Plot.Plot, slot.Definition, titleFor?.Invoke(slot.Definition) ?? slot.Definition.Title, slot.Series, xRange, ShowLegend);
+                slot.Plot.Plot, slot.Definition, titleFor?.Invoke(slot.Definition) ?? slot.Definition.Title,
+                slot.Series, xRange, ShowLegend, EmptyText);
 
-            // Drawing cleared the crosshair; put it back and refresh the read-out with the new data.
+            // Drawing cleared the crosshair. A still pointer gets no MouseMove while a live chart
+            // scrolls under it, so re-snap to whatever sample is under the pointer now.
             slot.Crosshair = null;
-            if (ReferenceEquals(slot, _hovered) && slot.HoverX is { } x)
+            if (ReferenceEquals(slot, _hovered))
             {
-                AddCrosshair(slot, x);
-                UpdateTooltip(slot, x);
+                if (slot.Plot.IsMouseOver)
+                {
+                    HoverAt(slot, Mouse.GetPosition(slot.Plot), refresh: false);
+                }
+                else
+                {
+                    _hovered = null;
+                    slot.HoverX = null;
+                    _tooltip.IsOpen = false;
+                }
             }
 
             slot.Plot.Refresh();
         }
     }
 
-    private void OnHover(ChartSlot slot, MouseEventArgs e)
+    private void OnHover(ChartSlot slot, MouseEventArgs e) => HoverAt(slot, e.GetPosition(slot.Plot), refresh: true);
+
+    /// <param name="position">Pointer position in device-independent pixels relative to the plot.</param>
+    private void HoverAt(ChartSlot slot, Point position, bool refresh)
     {
-        var pixel = slot.Plot.GetPlotPixelPosition(e);
-        var mouse = slot.Plot.Plot.GetCoordinates(pixel);
+        var scale = slot.Plot.DisplayScale;
+        var mouse = slot.Plot.Plot.GetCoordinates(new ScottPlot.Pixel((float)(position.X * scale), (float)(position.Y * scale)));
         var limits = slot.Plot.Plot.Axes.GetLimits();
         if (mouse.X < limits.Left || mouse.X > limits.Right)
         {
@@ -166,10 +227,11 @@ public sealed class ChartPanel : UserControl
         if (slot.Crosshair is not null)
             slot.Plot.Plot.Remove(slot.Crosshair);
         AddCrosshair(slot, x);
-        slot.Plot.Refresh();
+        if (refresh)
+            slot.Plot.Refresh();
 
         UpdateTooltip(slot, x);
-        PlaceTooltip(slot, e.GetPosition(slot.Plot));
+        PlaceTooltip(slot, position);
     }
 
     private static void AddCrosshair(ChartSlot slot, double x)
@@ -257,10 +319,13 @@ public sealed class ChartPanel : UserControl
         _tooltip.Child.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
         var size = _tooltip.Child.DesiredSize;
 
-        // Keep the read-out beside the pointer, flipping to the left half when near the right edge.
-        var left = position.X > slot.Plot.ActualWidth / 2 ? position.X - size.Width - 16 : position.X + 16;
-        _tooltip.HorizontalOffset = Math.Max(0, left);
-        _tooltip.VerticalOffset = Math.Max(0, position.Y - size.Height / 2);
+        // Beside the pointer, never over it: right of it, or left of it when that fits better.
+        // The popup is its own window, so it may extend past the chart's edges.
+        var right = position.X + 16;
+        var left = position.X - 16 - size.Width;
+        var useLeft = right + size.Width > slot.Plot.ActualWidth && left >= 0;
+        _tooltip.HorizontalOffset = useLeft ? left : right;
+        _tooltip.VerticalOffset = position.Y - size.Height / 2;
         _tooltip.IsOpen = true;
     }
 

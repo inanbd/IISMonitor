@@ -4,7 +4,7 @@ using IISMonitor.Collectors.Native;
 
 namespace IISMonitor.Collectors.Database;
 
-internal readonly record struct TcpConnection(int Pid, int State, int LocalPort, int RemotePort);
+internal readonly record struct TcpConnection(int Pid, int State, int LocalPort, int RemotePort, bool RemoteIsLoopback = false);
 
 /// <summary>Reads the system TCP tables (IPv4 and IPv6) with the owning process of each connection.</summary>
 internal static class TcpTableReader
@@ -58,7 +58,9 @@ internal static class TcpTableReader
                         Pid: Marshal.ReadInt32(row, 20),
                         State: Marshal.ReadInt32(row, 0),
                         LocalPort: Port(Marshal.ReadInt32(row, 8)),
-                        RemotePort: Port(Marshal.ReadInt32(row, 16))));
+                        RemotePort: Port(Marshal.ReadInt32(row, 16)),
+                        // Addresses are in network byte order: the first octet is the low byte.
+                        RemoteIsLoopback: (Marshal.ReadInt32(row, 12) & 0xFF) == 127));
                 }
                 else
                 {
@@ -66,7 +68,8 @@ internal static class TcpTableReader
                         Pid: Marshal.ReadInt32(row, 52),
                         State: Marshal.ReadInt32(row, 48),
                         LocalPort: Port(Marshal.ReadInt32(row, 20)),
-                        RemotePort: Port(Marshal.ReadInt32(row, 44))));
+                        RemotePort: Port(Marshal.ReadInt32(row, 44)),
+                        RemoteIsLoopback: IsLoopbackV6(row + 24)));
                 }
             }
         }
@@ -75,6 +78,16 @@ internal static class TcpTableReader
             if (buffer != IntPtr.Zero)
                 Marshal.FreeHGlobal(buffer);
         }
+    }
+
+    /// <summary>::1, or an IPv4-mapped 127.x.x.x address.</summary>
+    private static bool IsLoopbackV6(IntPtr address)
+    {
+        var bytes = new byte[16];
+        Marshal.Copy(address, bytes, 0, 16);
+        if (bytes.AsSpan(0, 15).IndexOfAnyExcept((byte)0) < 0 && bytes[15] == 1)
+            return true;
+        return bytes.AsSpan(0, 10).IndexOfAnyExcept((byte)0) < 0 && bytes[10] == 0xFF && bytes[11] == 0xFF && bytes[12] == 127;
     }
 
     /// <summary>Ports are stored in network byte order in the low 16 bits.</summary>

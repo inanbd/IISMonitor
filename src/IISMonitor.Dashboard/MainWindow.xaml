@@ -115,7 +115,7 @@
                             <ComboBox ItemsSource="{Binding WindowOptions}" SelectedItem="{Binding SelectedWindow}" DisplayMemberPath="Label" />
                         </StackPanel>
                         <TextBlock VerticalAlignment="Center" TextWrapping="Wrap" Foreground="{StaticResource MutedBrush}"
-                                   Text="One line per app pool. Network = traffic of the pool's websites plus its own outbound calls (databases, APIs). Hover a chart to read every pool's value." />
+                                   Text="One line per app pool. Network = traffic of the pool's websites plus its own outbound calls (databases, APIs). Hover a chart to read the pools' values at that moment, highest first." />
                     </DockPanel>
 
                     <!-- Pick list; each line key is also the charts' legend -->

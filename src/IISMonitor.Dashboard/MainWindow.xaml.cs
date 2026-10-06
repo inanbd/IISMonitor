@@ -48,7 +48,10 @@ public partial class MainWindow : Window
     {
         var tab = Tabs.SelectedItem;
         if (ReferenceEquals(tab, OverviewTab))
+        {
+            OverviewCharts.EmptyText = _viewModel.Overview.EmptyText;
             OverviewCharts.Render(_viewModel.OverviewSeries, _viewModel.LiveRange(), _viewModel.OverviewTitle);
+        }
         else if (ReferenceEquals(tab, PoolsTab))
             Render(PoolCharts, EntityKind.AppPool, _viewModel.SelectedPool?.Name);
         else if (ReferenceEquals(tab, SitesTab))

@@ -18,7 +18,9 @@ internal sealed class IisCounterReader
     {
         var result = new IisCounterValues();
 
-        if (TrySample(_webService, problems) is { } sites)
+        var sites = TrySample(_webService, problems);
+        result.SitesAvailable = sites is not null;
+        if (sites is not null)
         {
             foreach (var (instance, values) in sites)
             {
@@ -32,7 +34,9 @@ internal sealed class IisCounterReader
             }
         }
 
-        if (TrySample(_workers, problems) is { } workers)
+        var workers = TrySample(_workers, problems);
+        result.WorkersAvailable = workers is not null;
+        if (workers is not null)
         {
             foreach (var (instance, values) in workers)
             {
@@ -45,7 +49,9 @@ internal sealed class IisCounterReader
             }
         }
 
-        if (TrySample(_queues, problems) is { } queues)
+        var queues = TrySample(_queues, problems);
+        result.QueuesAvailable = queues is not null;
+        if (queues is not null)
         {
             foreach (var (instance, values) in queues)
             {

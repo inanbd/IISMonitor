@@ -94,17 +94,43 @@ public class ChartRendererTests
     }
 
     [Fact]
-    public void Title_stays_in_primary_ink_and_time_labels_fit_the_span()
+    public void Title_stays_in_primary_ink()
     {
         var plot = new Plot();
         ChartRenderer.ApplyStyle(plot);
         Assert.Equal(ChartRenderer.Ink.ToHex(), plot.Axes.Title.Label.ForeColor.ToHex());
+    }
 
+    [Fact]
+    public void Time_labels_follow_tick_spacing_and_visible_span()
+    {
         var noon = new DateTime(2026, 10, 6, 12, 34, 56);
         var culture = CultureInfo.CurrentCulture;
-        Assert.Equal(noon.ToString("T", culture), ChartRenderer.TimeLabelFormat(5.0 / 1440)(noon));
-        Assert.Equal(noon.ToString("t", culture), ChartRenderer.TimeLabelFormat(6.0 / 24)(noon));
-        Assert.StartsWith(noon.ToString("MMM d", culture), ChartRenderer.TimeLabelFormat(7)(noon));
+        Assert.Equal(noon.ToString("T", culture), ChartRenderer.FormatTick(noon, new ScottPlot.TickGenerators.TimeUnits.Second(), 5.0 / 1440));
+        Assert.Equal(noon.ToString("t", culture), ChartRenderer.FormatTick(noon, new ScottPlot.TickGenerators.TimeUnits.Minute(), 15.0 / 1440));
+        Assert.Equal(noon.ToString("MMM d", culture) + " " + noon.ToString("t", culture),
+            ChartRenderer.FormatTick(noon, new ScottPlot.TickGenerators.TimeUnits.Hour(), 7));
+    }
+
+    [Fact]
+    public void Rendered_tick_labels_match_the_window()
+    {
+        var start = new DateTime(2026, 10, 6, 12, 0, 0);
+        string[] Labels(TimeSpan window)
+        {
+            var plot = new Plot();
+            ChartRenderer.ApplyStyle(plot);
+            var xs = new[] { start.ToOADate(), start.Add(window).ToOADate() };
+            ChartRenderer.Draw(plot, Cpu, "CPU", [new ChartSeries("Shop", xs, [1, 2])], (xs[0], xs[1]), true);
+            plot.GetImageBytes(700, 250, ImageFormat.Png);
+            return plot.Axes.Bottom.TickGenerator.Ticks.Where(t => t.IsMajor).Select(t => t.Label).ToArray();
+        }
+
+        // Exactly 15 minutes must not flip between formats from one redraw to the next.
+        var quarter = Labels(TimeSpan.FromMinutes(15));
+        Assert.NotEmpty(quarter);
+        Assert.Equal(quarter, Labels(TimeSpan.FromMinutes(15)));
+        Assert.All(Labels(TimeSpan.FromDays(3)), label => Assert.Contains(start.ToString("MMM", CultureInfo.CurrentCulture), label));
     }
 
     [Theory]

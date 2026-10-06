@@ -35,6 +35,17 @@ public sealed class SeriesSlotRegistry
             }
         }
 
+        // While every current pool could have a solid line, don't leave one dashed because of slots
+        // held by pools that were deleted: move just those pools down into free solid slots.
+        if (current.Count <= SeriesStyles.Palette.Count)
+        {
+            foreach (var name in current.Where(n => _slots.TryGetValue(n, out var slot) && slot >= SeriesStyles.Palette.Count).ToList())
+            {
+                used.Remove(_slots[name]);
+                _slots.Remove(name);
+            }
+        }
+
         var changed = false;
         foreach (var name in current.Order(StringComparer.OrdinalIgnoreCase))
         {
