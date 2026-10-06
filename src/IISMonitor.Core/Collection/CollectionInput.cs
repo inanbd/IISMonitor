@@ -30,8 +30,11 @@ public sealed class CollectionInput
     /// <summary>Established TCP connections to SQL Server ports, by owning PID.</summary>
     public IReadOnlyDictionary<int, int>? DbConnectionsByPid { get; init; }
 
-    /// <summary>Sessions reported by SQL Server, by client PID. Null when no DMV connection is configured.</summary>
-    public IReadOnlyDictionary<int, DbSessionCount>? DbSessionsByPid { get; init; }
+    /// <summary>SQL Server activity since the previous tick. Null when no SQL Server connection is configured.</summary>
+    public DbActivityInput? DbActivity { get; init; }
+
+    /// <summary>Local SQL Server processes (sqlservr.exe); their samples are in <see cref="ProcessSamples"/>.</summary>
+    public IReadOnlyList<int> SqlServerPids { get; init; } = [];
 
     public IReadOnlyDictionary<long, ResponseStats>? ResponseBySite { get; init; }
     public IReadOnlyDictionary<string, ResponseStats>? ResponseByPool { get; init; }
@@ -86,8 +89,6 @@ public readonly record struct ProcessSample(
 
 /// <summary>Cumulative byte counts for one process since tracing started.</summary>
 public readonly record struct IoTotals(long DiskReadBytes, long DiskWriteBytes, long NetSentBytes, long NetReceivedBytes);
-
-public readonly record struct DbSessionCount(int Sessions, int Active);
 
 public readonly record struct SystemSample(long IdleTime100ns, long KernelTime100ns, long UserTime100ns, long MemoryTotalBytes, long MemoryAvailableBytes);
 

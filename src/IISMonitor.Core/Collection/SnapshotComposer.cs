@@ -37,7 +37,37 @@ public sealed class SnapshotComposer(string machineName, int processorCount)
         var pools = ComposePools(input, members, processes);
         snapshot.AppPools = pools;
         snapshot.Sites = ComposeSites(input);
+
+        var sqlServer = input.SqlServerPids.Where(processes.ContainsKey).Select(pid => processes[pid]).ToList();
+        if (sqlServer.Count > 0)
+        {
+            snapshot.Server.SqlServerCpuPercent = sqlServer.Sum(p => p.CpuPercent);
+            snapshot.Server.SqlServerMemoryBytes = sqlServer.Sum(p => p.WorkingSetBytes);
+        }
+
+        if (input.DbActivity is { } db)
+            snapshot.Database = ComposeDatabase(db, members, pools);
         return snapshot;
+    }
+
+    private static DatabaseActivity ComposeDatabase(DbActivityInput db, Dictionary<int, PoolMembership> members, List<AppPoolMetrics> pools)
+    {
+        string? PoolOf(int pid) => members.TryGetValue(pid, out var m) ? m.AppPool : null;
+
+        foreach (var query in db.Running)
+            query.AppPool = PoolOf(query.Pid);
+        foreach (var query in db.CompletedSlow)
+            query.AppPool = PoolOf(query.Pid);
+
+        return new DatabaseActivity
+        {
+            SlowThresholdMs = db.SlowThresholdMs,
+            PoolLoad = pools.Sum(p => p.DbLoad ?? 0),
+            OtherLocalLoad = db.ByPid.Where(kv => !members.ContainsKey(kv.Key)).Sum(kv => kv.Value.Load),
+            OtherServersLoad = db.OtherServersLoad,
+            Running = db.Running,
+            CompletedSlow = db.CompletedSlow,
+        };
     }
 
     private ServerMetrics ComposeServer(SystemSample? sample)
@@ -65,11 +95,15 @@ public sealed class SnapshotComposer(string machineName, int processorCount)
     private Dictionary<int, ProcessMetrics> ComposeProcesses(
         CollectionInput input, Dictionary<int, PoolMembership> members, double elapsed)
     {
-        var entries = input.Processes.ToDictionary(p => p.Pid);
+        var entries = input.Processes.GroupBy(p => p.Pid).ToDictionary(g => g.Key, g => g.First());
         var result = new Dictionary<int, ProcessMetrics>();
         var seen = new HashSet<(int, long)>();
 
-        foreach (var (pid, membership) in members)
+        // App pool processes, plus the local SQL Server process(es) for the server's SQL Server CPU.
+        var tracked = members.Select(kv => (Pid: kv.Key, IsWorker: kv.Value.IsWorkerProcess))
+            .Concat(input.SqlServerPids.Where(pid => !members.ContainsKey(pid)).Select(pid => (Pid: pid, IsWorker: false)));
+
+        foreach (var (pid, isWorker) in tracked)
         {
             entries.TryGetValue(pid, out var entry);
             var metrics = new ProcessMetrics
@@ -77,7 +111,7 @@ public sealed class SnapshotComposer(string machineName, int processorCount)
                 Pid = pid,
                 ParentPid = entry.ParentPid,
                 Name = entry.Name ?? "",
-                IsWorkerProcess = membership.IsWorkerProcess,
+                IsWorkerProcess = isWorker,
                 ThreadCount = entry.ThreadCount,
             };
 
@@ -110,8 +144,8 @@ public sealed class SnapshotComposer(string machineName, int processorCount)
 
             if (input.DbConnectionsByPid is { } tcp)
                 metrics.DbConnections = tcp.GetValueOrDefault(pid);
-            if (input.DbSessionsByPid is { } dmv)
-                metrics.DbSessions = dmv.GetValueOrDefault(pid).Sessions;
+            if (input.DbActivity is { } db)
+                metrics.DbSessions = db.ByPid.GetValueOrDefault(pid).Sessions;
 
             result[pid] = metrics;
         }
@@ -239,10 +273,19 @@ public sealed class SnapshotComposer(string machineName, int processorCount)
                 pool.HttpBytesReceivedPerSec = http.Received;
             }
 
-            if (input.DbSessionsByPid is { } dmv)
+            if (input.DbActivity is { } db)
             {
-                pool.DbSessions = procs.Sum(p => dmv.GetValueOrDefault(p.Pid).Sessions);
-                pool.DbActiveSessions = procs.Sum(p => dmv.GetValueOrDefault(p.Pid).Active);
+                var activity = procs.Select(p => db.ByPid.GetValueOrDefault(p.Pid)).ToList();
+                var pids = procs.Select(p => p.Pid).ToHashSet();
+                pool.DbSessions = activity.Sum(a => a.Sessions);
+                pool.DbActiveSessions = activity.Sum(a => a.Active);
+                pool.DbLoad = activity.Sum(a => a.Load);
+                pool.DbCpuLoad = activity.Sum(a => a.CpuLoad);
+                pool.DbBlocked = activity.Sum(a => a.Blocked);
+                pool.DbBlocking = activity.Sum(a => a.Blocking);
+                pool.DbIdleInTransaction = activity.Sum(a => a.IdleInTransaction);
+                pool.DbSlowRunning = activity.Sum(a => a.SlowRunning);
+                pool.DbSlowCompleted = db.CompletedSlow.Count(q => pids.Contains(q.Pid));
             }
 
             if (input.Counters is { } counters)

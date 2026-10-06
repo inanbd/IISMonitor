@@ -51,6 +51,29 @@ public sealed partial class HistoryStore
             ) WITHOUT ROWID;
             """);
 
+        Execute(connection, """
+            CREATE TABLE IF NOT EXISTS slow_queries (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                start_ts INTEGER NOT NULL,
+                end_ts INTEGER NOT NULL,
+                app_pool TEXT NOT NULL,
+                pid INTEGER NOT NULL,
+                database_name TEXT NOT NULL,
+                login_name TEXT NOT NULL,
+                program_name TEXT NOT NULL,
+                query_hash TEXT,
+                object_name TEXT,
+                statement TEXT NOT NULL,
+                duration_ms REAL NOT NULL,
+                cpu_ms REAL NOT NULL,
+                logical_reads INTEGER NOT NULL,
+                writes INTEGER NOT NULL,
+                main_wait TEXT,
+                was_blocked INTEGER NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS ix_slow_queries_end ON slow_queries (end_ts);
+            """);
+
         foreach (var kind in Enum.GetValues<EntityKind>())
         {
             var table = TableName(kind);
@@ -132,6 +155,127 @@ public sealed partial class HistoryStore
         transaction.Commit();
     }
 
+    public void WriteSlowQueries(IReadOnlyCollection<Models.SlowQuery> queries)
+    {
+        if (queries.Count == 0)
+            return;
+
+        using var connection = Open();
+        using var transaction = connection.BeginTransaction();
+        using var insert = connection.CreateCommand();
+        insert.Transaction = transaction;
+        insert.CommandText = """
+            INSERT INTO slow_queries (start_ts, end_ts, app_pool, pid, database_name, login_name, program_name, query_hash,
+                                      object_name, statement, duration_ms, cpu_ms, logical_reads, writes, main_wait, was_blocked)
+            VALUES ($start, $end, $pool, $pid, $db, $login, $program, $hash, $object, $statement, $duration, $cpu, $reads, $writes, $wait, $blocked);
+            """;
+        var p = new Dictionary<string, SqliteParameter>();
+        foreach (var name in new[] { "start", "end", "pool", "pid", "db", "login", "program", "hash", "object", "statement", "duration", "cpu", "reads", "writes", "wait", "blocked" })
+            p[name] = insert.Parameters.Add(new SqliteParameter { ParameterName = "$" + name });
+
+        foreach (var q in queries)
+        {
+            p["start"].Value = ToUnixMs(q.StartUtc);
+            p["end"].Value = ToUnixMs(q.EndUtc);
+            p["pool"].Value = q.AppPool ?? "";
+            p["pid"].Value = q.Pid;
+            p["db"].Value = q.Database;
+            p["login"].Value = q.Login;
+            p["program"].Value = q.Program;
+            p["hash"].Value = (object?)q.QueryHash ?? DBNull.Value;
+            p["object"].Value = (object?)q.ObjectName ?? DBNull.Value;
+            p["statement"].Value = q.Statement ?? "";
+            p["duration"].Value = q.DurationMs;
+            p["cpu"].Value = q.CpuMs;
+            p["reads"].Value = q.LogicalReads;
+            p["writes"].Value = q.Writes;
+            p["wait"].Value = (object?)q.MainWait ?? DBNull.Value;
+            p["blocked"].Value = q.WasBlocked ? 1 : 0;
+            insert.ExecuteNonQuery();
+        }
+
+        transaction.Commit();
+    }
+
+    public SlowQueryReport QuerySlowQueries(SlowQueryRequest request)
+    {
+        var report = new SlowQueryReport();
+        using var connection = Open();
+
+        using (var groups = connection.CreateCommand())
+        {
+            // The same query shape groups by its query hash; statements without one group by text.
+            groups.CommandText = """
+                SELECT app_pool, database_name, MAX(object_name), MAX(statement), COUNT(*), AVG(duration_ms), MAX(duration_ms),
+                       SUM(duration_ms), SUM(cpu_ms), SUM(logical_reads), SUM(was_blocked), MAX(end_ts),
+                       (SELECT w.main_wait FROM slow_queries w
+                        WHERE w.app_pool = s.app_pool AND w.database_name = s.database_name
+                          AND COALESCE(w.query_hash, w.statement) = COALESCE(s.query_hash, s.statement)
+                          AND w.end_ts >= $from AND w.end_ts < $to AND w.main_wait IS NOT NULL
+                        GROUP BY w.main_wait ORDER BY COUNT(*) DESC LIMIT 1)
+                FROM slow_queries s
+                WHERE end_ts >= $from AND end_ts < $to AND ($pool IS NULL OR app_pool = $pool)
+                GROUP BY app_pool, database_name, COALESCE(query_hash, statement)
+                ORDER BY SUM(duration_ms) DESC
+                LIMIT $limit;
+                """;
+            AddRange(groups, request);
+            groups.Parameters.AddWithValue("$limit", Math.Clamp(request.MaxGroups, 1, 5000));
+            using var reader = groups.ExecuteReader();
+            while (reader.Read())
+            {
+                report.Groups.Add(new SlowQueryGroup
+                {
+                    AppPool = reader.GetString(0),
+                    Database = reader.GetString(1),
+                    ObjectName = reader.IsDBNull(2) ? null : reader.GetString(2),
+                    Statement = reader.IsDBNull(3) ? "" : reader.GetString(3),
+                    Count = reader.GetInt32(4),
+                    AverageMs = reader.GetDouble(5),
+                    MaxMs = reader.GetDouble(6),
+                    TotalMs = reader.GetDouble(7),
+                    TotalCpuMs = reader.GetDouble(8),
+                    TotalLogicalReads = reader.GetInt64(9),
+                    BlockedCount = reader.GetInt32(10),
+                    LastSeenUnixMs = reader.GetInt64(11),
+                    MainWait = reader.IsDBNull(12) ? null : reader.GetString(12),
+                });
+            }
+        }
+
+        using (var pools = connection.CreateCommand())
+        {
+            pools.CommandText = """
+                SELECT app_pool, COUNT(*), SUM(duration_ms), SUM(cpu_ms)
+                FROM slow_queries
+                WHERE end_ts >= $from AND end_ts < $to AND ($pool IS NULL OR app_pool = $pool)
+                GROUP BY app_pool
+                ORDER BY SUM(duration_ms) DESC;
+                """;
+            AddRange(pools, request);
+            using var reader = pools.ExecuteReader();
+            while (reader.Read())
+            {
+                report.Pools.Add(new SlowQueryPoolTotal
+                {
+                    AppPool = reader.GetString(0),
+                    Count = reader.GetInt32(1),
+                    TotalMs = reader.GetDouble(2),
+                    TotalCpuMs = reader.GetDouble(3),
+                });
+            }
+        }
+
+        return report;
+
+        static void AddRange(SqliteCommand command, SlowQueryRequest request)
+        {
+            command.Parameters.AddWithValue("$from", ToUnixMs(request.FromUtc));
+            command.Parameters.AddWithValue("$to", ToUnixMs(request.ToUtc));
+            command.Parameters.AddWithValue("$pool", (object?)request.AppPool ?? DBNull.Value);
+        }
+    }
+
     public HistoryResult Query(HistoryQuery query)
     {
         var from = ToUnixMs(query.FromUtc);
@@ -205,6 +349,14 @@ public sealed partial class HistoryStore
             delete.CommandText = $"DELETE FROM {TableName(kind)} WHERE ts < $cutoff;";
             delete.Parameters.AddWithValue("$cutoff", cutoff);
             removed += delete.ExecuteNonQuery();
+        }
+
+        using (var slow = connection.CreateCommand())
+        {
+            slow.Transaction = transaction;
+            slow.CommandText = "DELETE FROM slow_queries WHERE end_ts < $cutoff;";
+            slow.Parameters.AddWithValue("$cutoff", cutoff);
+            removed += slow.ExecuteNonQuery();
         }
 
         using (var entities = connection.CreateCommand())

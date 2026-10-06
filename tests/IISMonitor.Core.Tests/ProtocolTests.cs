@@ -40,6 +40,12 @@ public class ProtocolTests
         public Task<List<string>> ListHistoryEntitiesAsync(EntityKind kind, CancellationToken cancellationToken) =>
             Task.FromResult(new List<string> { kind.ToString() });
 
+        public Task<SlowQueryReport> QuerySlowQueriesAsync(SlowQueryRequest request, CancellationToken cancellationToken) =>
+            Task.FromResult(new SlowQueryReport
+            {
+                Groups = [new SlowQueryGroup { AppPool = request.AppPool ?? "", Statement = "SELECT ?", Count = 3, MaxMs = 2500 }],
+            });
+
         public Task<CommandResult> EnableIisEtwLoggingAsync(CancellationToken cancellationToken) =>
             Task.FromResult(CommandResult.Ok("done"));
     }
@@ -81,6 +87,8 @@ public class ProtocolTests
         Assert.Equal([1.5, null], history.Series["cpu"]);
 
         Assert.Equal(["AppPool"], await client.ListHistoryEntitiesAsync(EntityKind.AppPool, cts.Token));
+        var slow = await client.QuerySlowQueriesAsync(new SlowQueryRequest { AppPool = "Shop" }, cts.Token);
+        Assert.Equal("Shop", Assert.Single(slow.Groups).AppPool);
         Assert.True((await client.EnableIisEtwLoggingAsync(cts.Token)).Success);
 
         var error = await Assert.ThrowsAsync<InvalidOperationException>(

@@ -33,6 +33,7 @@ public partial class SettingsWindow : Window
         SqlPorts.Text = string.Join(", ", settings.SqlServerPorts);
         DetectLocalSql.IsChecked = settings.DetectLocalSqlServerPorts;
         SqlConnectionStrings.Text = string.Join(Environment.NewLine, settings.SqlServerConnectionStrings);
+        SlowThreshold.Text = settings.SlowQueryThresholdSeconds.ToString("0.##", CultureInfo.CurrentCulture);
         KernelTracing.IsChecked = settings.EnableKernelTracing;
         ResponseTracing.IsChecked = settings.EnableResponseTimeTracing;
         StandaloneNote.Visibility = standalone ? Visibility.Visible : Visibility.Collapsed;
@@ -46,6 +47,13 @@ public partial class SettingsWindow : Window
             || days < 1 || days > MonitorSettings.MaxRetentionDays)
         {
             ShowError($"Keep history for: enter a number of days from 1 to {MonitorSettings.MaxRetentionDays}.");
+            return;
+        }
+
+        if (!double.TryParse(SlowThreshold.Text.Trim(), NumberStyles.Float, CultureInfo.CurrentCulture, out var slowSeconds)
+            || slowSeconds < 0.5 || slowSeconds > 3600)
+        {
+            ShowError("Slow query: enter a number of seconds from 0.5 to 3600.");
             return;
         }
 
@@ -70,6 +78,7 @@ public partial class SettingsWindow : Window
         result.SqlServerConnectionStrings = SqlConnectionStrings.Text
             .Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
             .ToList();
+        result.SlowQueryThresholdSeconds = slowSeconds;
         result.EnableKernelTracing = KernelTracing.IsChecked == true;
         result.EnableResponseTimeTracing = ResponseTracing.IsChecked == true;
 

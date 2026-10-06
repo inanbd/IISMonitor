@@ -75,6 +75,7 @@ public sealed class MainViewModel : ObservableObject, IAsyncDisposable
         History = new HistoryViewModel(() => _backend, ReportError);
         Overview = new OverviewViewModel(new DashboardPreferencesStore(DashboardPreferencesStore.DefaultPath));
         Overview.SelectionChanged += (_, _) => LiveChartsInvalidated?.Invoke(this, EventArgs.Empty);
+        Database = new DatabaseViewModel(() => _backend, ReportError);
         StartServiceCommand = new AsyncCommand(StartServiceAsync, ReportError, () => CanStartService);
         EnableResponseTimesCommand = new AsyncCommand(EnableResponseTimesAsync, ReportError, () => _backend is not null);
         TogglePauseCommand = new RelayCommand(() => IsPaused = !IsPaused);
@@ -97,6 +98,10 @@ public sealed class MainViewModel : ObservableObject, IAsyncDisposable
     public ObservableCollection<HealthRow> Health { get; } = [];
     public HistoryViewModel History { get; }
     public OverviewViewModel Overview { get; }
+    public DatabaseViewModel Database { get; }
+
+    /// <summary>Set by the window: the Database tab is showing (its slow-query list refreshes only then).</summary>
+    public bool IsDatabaseTabVisible { get; set; }
 
     public IReadOnlyList<IntervalOption> IntervalOptions { get; }
     public IReadOnlyList<WindowOption> WindowOptions { get; }
@@ -335,6 +340,7 @@ public sealed class MainViewModel : ObservableObject, IAsyncDisposable
         _shown = snapshot;
         MachineName = snapshot.Server.MachineName;
         Overview.Sync(snapshot.AppPools);
+        Database.Apply(snapshot, _backend?.Settings.SqlServerConnectionStrings.Count > 0, IsDatabaseTabVisible);
         Sync(Pools, snapshot.AppPools, p => p.Name, name => new AppPoolRow(name), (row, m) => row.Update(m));
         Sync(Sites, snapshot.Sites, s => s.Name, name => new SiteRow(name), (row, m) => row.Update(m));
         RefreshSelectedPool();
@@ -438,9 +444,11 @@ public sealed class MainViewModel : ObservableObject, IAsyncDisposable
 
         var tcp = snapshot.AppPools.Where(p => p.DbConnections is not null).ToList();
         var sessions = snapshot.AppPools.Where(p => p.DbSessions is not null).ToList();
-        DbText = tcp.Count == 0 ? MetricFormatter.Missing : tcp.Sum(p => p.DbConnections ?? 0).ToString("N0");
-        if (sessions.Count > 0)
-            DbText += $" · {sessions.Sum(p => p.DbSessions ?? 0):N0} sessions";
+        DbText = sessions.Count > 0
+            ? $"{sessions.Sum(p => p.DbSessions ?? 0):N0} sessions"
+            : tcp.Count == 0 ? MetricFormatter.Missing : $"{tcp.Sum(p => p.DbConnections ?? 0):N0} connections";
+        if (snapshot.Database is { } database)
+            DbText += $" · load {database.PoolLoad:0.00}";
 
         var responses = snapshot.Sites.Select(s => s.Response).Where(r => r is { RequestCount: > 0 }).Select(r => r!).ToList();
         var count = responses.Sum(r => r.RequestCount);

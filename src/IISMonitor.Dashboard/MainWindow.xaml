@@ -174,6 +174,7 @@
                             <DataGridTextColumn Header="Network sent / recv" Binding="{Binding NetworkText}" SortMemberPath="NetworkTotal" Width="150" ElementStyle="{StaticResource NumberCell}" />
                             <DataGridTextColumn Header="DB conns" Binding="{Binding DbConnectionsText}" SortMemberPath="DbConnections" Width="70" ElementStyle="{StaticResource NumberCell}" />
                             <DataGridTextColumn Header="DB sessions" Binding="{Binding DbSessionsText}" SortMemberPath="DbSessions" Width="110" ElementStyle="{StaticResource NumberCell}" />
+                            <DataGridTextColumn Header="DB load" Binding="{Binding DbLoadText}" SortMemberPath="DbLoad" Width="65" ElementStyle="{StaticResource NumberCell}" />
                             <DataGridTextColumn Header="Req/sec" Binding="{Binding RequestsText}" SortMemberPath="RequestsPerSec" Width="70" ElementStyle="{StaticResource NumberCell}" />
                             <DataGridTextColumn Header="Active" Binding="{Binding ActiveRequestsText}" SortMemberPath="ActiveRequests" Width="60" ElementStyle="{StaticResource NumberCell}" />
                             <DataGridTextColumn Header="Queue" Binding="{Binding QueueText}" SortMemberPath="Queue" Width="60" ElementStyle="{StaticResource NumberCell}" />
@@ -252,6 +253,114 @@
                         </DockPanel>
                         <controls:ChartPanel x:Name="SiteCharts" />
                     </DockPanel>
+                </Grid>
+            </TabItem>
+
+            <!-- Database: which app pools keep SQL Server busy, and slow queries -->
+            <TabItem x:Name="DatabaseTab" Header="Database">
+                <Grid>
+                    <!-- Shown until a SQL Server connection string is configured -->
+                    <ScrollViewer VerticalScrollBarVisibility="Auto"
+                                  Visibility="{Binding Database.ShowSetup, Converter={StaticResource BoolToVisibility}}">
+                        <StackPanel Margin="12" MaxWidth="900" HorizontalAlignment="Left">
+                            <TextBlock Text="See which app pools keep SQL Server busy, and which of their queries are slow" FontSize="16" FontWeight="SemiBold" />
+                            <TextBlock TextWrapping="Wrap" Margin="0,8,0,0"
+                                       Text="Every second, IIS Monitor asks SQL Server which queries are running and which process sent them, then adds them up per app pool. Queries that run longer than the slow-query threshold (2 seconds by default) are recorded with their SQL text, with literal values replaced by '?'. Nothing is installed on the SQL Server." />
+                            <TextBlock FontWeight="SemiBold" Margin="0,12,0,4" Text="1. Add a connection string in Settings (SQL Server sessions box), for example:" />
+                            <TextBox IsReadOnly="True" FontFamily="Consolas" Text="Server=.;Integrated Security=true;TrustServerCertificate=true" BorderThickness="0" Background="#EEF1F4" Padding="6" />
+                            <TextBlock FontWeight="SemiBold" Margin="0,12,0,4" TextWrapping="Wrap"
+                                       Text="2. Let the account that connects see server activity. The IIS Monitor service runs as LocalSystem; for a SQL Server on this machine, run this once in SQL Server Management Studio:" />
+                            <TextBox IsReadOnly="True" FontFamily="Consolas" TextWrapping="Wrap" BorderThickness="0" Background="#EEF1F4" Padding="6"
+                                     Text="IF SUSER_ID(N'NT AUTHORITY\SYSTEM') IS NULL CREATE LOGIN [NT AUTHORITY\SYSTEM] FROM WINDOWS;&#10;GRANT VIEW SERVER STATE TO [NT AUTHORITY\SYSTEM];" />
+                            <TextBlock TextWrapping="Wrap" Margin="0,6,0,0" Foreground="{StaticResource MutedBrush}"
+                                       Text="In standalone mode the dashboard connects as your own Windows account instead, which then needs the same permission. For a SQL Server on another machine, grant it to the IIS server's computer account (DOMAIN\SERVER$)." />
+                            <Button Content="Open settings…" Click="OnSettingsClick" HorizontalAlignment="Left" Margin="0,12,0,0" />
+                        </StackPanel>
+                    </ScrollViewer>
+
+                    <Grid Visibility="{Binding Database.IsConfigured, Converter={StaticResource BoolToVisibility}}">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="1*" MinHeight="90" />
+                            <RowDefinition Height="230" />
+                            <RowDefinition Height="2*" MinHeight="150" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="120" />
+                        </Grid.RowDefinitions>
+
+                        <TextBlock Text="{Binding Database.Summary}" TextWrapping="Wrap" Margin="0,6" FontWeight="SemiBold" />
+
+                        <DataGrid Grid.Row="1" ItemsSource="{Binding Database.Pools}">
+                            <DataGrid.Columns>
+                                <DataGridTextColumn Header="App pool" Binding="{Binding Name}" Width="200" ElementStyle="{StaticResource TextCell}" />
+                                <DataGridTextColumn Header="DB load" Binding="{Binding LoadText}" SortMemberPath="Load" Width="75" ElementStyle="{StaticResource NumberCell}" />
+                                <DataGridTextColumn Header="on CPU" Binding="{Binding CpuText}" SortMemberPath="CpuLoad" Width="70" ElementStyle="{StaticResource NumberCell}" />
+                                <DataGridTextColumn Header="waiting" Binding="{Binding WaitingText}" Width="70" ElementStyle="{StaticResource NumberCell}" />
+                                <DataGridTextColumn Header="Blocked now" Binding="{Binding Blocked}" Width="90" ElementStyle="{StaticResource NumberCell}" />
+                                <DataGridTextColumn Header="Blocking others" Binding="{Binding Blocking}" Width="105" ElementStyle="{StaticResource NumberCell}" />
+                                <DataGridTextColumn Header="Idle in transaction" Binding="{Binding IdleInTransaction}" Width="120" ElementStyle="{StaticResource NumberCell}" />
+                                <DataGridTextColumn Header="Slow running now" Binding="{Binding SlowRunning}" Width="115" ElementStyle="{StaticResource NumberCell}" />
+                                <DataGridTextColumn Header="Sessions" Binding="{Binding SessionsText}" SortMemberPath="Sessions" Width="*" ElementStyle="{StaticResource NumberCell}" />
+                            </DataGrid.Columns>
+                        </DataGrid>
+
+                        <controls:ChartPanel x:Name="DatabaseCharts" Grid.Row="2" ChartHeight="200" MaxColumns="2" ShowLegend="False" Margin="0,4,0,0" />
+
+                        <TabControl Grid.Row="3" Margin="0,4,0,0">
+                            <TabItem Header="Running now">
+                                <DataGrid ItemsSource="{Binding Database.Running}" SelectedItem="{Binding Database.SelectedRunning}">
+                                    <DataGrid.Columns>
+                                        <DataGridTextColumn Header="App pool / client" Binding="{Binding Client}" Width="170" ElementStyle="{StaticResource TextCell}" />
+                                        <DataGridTextColumn Header="Database" Binding="{Binding Query.Database}" Width="110" ElementStyle="{StaticResource TextCell}" />
+                                        <DataGridTextColumn Header="Running for" Binding="{Binding ElapsedText}" SortMemberPath="Elapsed" Width="85" ElementStyle="{StaticResource NumberCell}" />
+                                        <DataGridTextColumn Header="CPU" Binding="{Binding CpuText}" Width="70" ElementStyle="{StaticResource NumberCell}" />
+                                        <DataGridTextColumn Header="Reads" Binding="{Binding ReadsText}" Width="80" ElementStyle="{StaticResource NumberCell}" />
+                                        <DataGridTextColumn Header="Doing" Binding="{Binding State}" Width="220" ElementStyle="{StaticResource TextCell}" />
+                                        <DataGridTextColumn Header="Blocked by" Binding="{Binding BlockedByText}" Width="90" ElementStyle="{StaticResource TextCell}" />
+                                        <DataGridTextColumn Header="Statement" Binding="{Binding StatementLine}" Width="*" ElementStyle="{StaticResource TextCell}" />
+                                    </DataGrid.Columns>
+                                    <DataGrid.RowStyle>
+                                        <Style TargetType="DataGridRow">
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding IsSlow}" Value="True">
+                                                    <Setter Property="Foreground" Value="{StaticResource BadBrush}" />
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </DataGrid.RowStyle>
+                                </DataGrid>
+                            </TabItem>
+                            <TabItem Header="{Binding Database.SlowHeader}">
+                                <DockPanel>
+                                    <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="0,4">
+                                        <ComboBox ItemsSource="{Binding Database.Ranges}" SelectedItem="{Binding Database.SelectedRange}" DisplayMemberPath="Label" />
+                                        <ComboBox ItemsSource="{Binding Database.PoolFilter}" SelectedItem="{Binding Database.SelectedPool}" MinWidth="180" />
+                                        <Button Content="Refresh" Command="{Binding Database.RefreshSlowCommand}" />
+                                        <TextBlock Text="{Binding Database.SlowSummary}" VerticalAlignment="Center" Margin="8,0" Foreground="{StaticResource MutedBrush}" TextTrimming="CharacterEllipsis" />
+                                    </StackPanel>
+                                    <DataGrid ItemsSource="{Binding Database.Slow}" SelectedItem="{Binding Database.SelectedSlow}">
+                                        <DataGrid.Columns>
+                                            <DataGridTextColumn Header="App pool" Binding="{Binding Pool}" Width="150" ElementStyle="{StaticResource TextCell}" />
+                                            <DataGridTextColumn Header="Database" Binding="{Binding Group.Database}" Width="100" ElementStyle="{StaticResource TextCell}" />
+                                            <DataGridTextColumn Header="Times" Binding="{Binding Group.Count}" Width="55" ElementStyle="{StaticResource NumberCell}" />
+                                            <DataGridTextColumn Header="Average" Binding="{Binding AverageText}" SortMemberPath="Group.AverageMs" Width="75" ElementStyle="{StaticResource NumberCell}" />
+                                            <DataGridTextColumn Header="Longest" Binding="{Binding MaxText}" SortMemberPath="Group.MaxMs" Width="75" ElementStyle="{StaticResource NumberCell}" />
+                                            <DataGridTextColumn Header="Total" Binding="{Binding TotalText}" SortMemberPath="Total" Width="75" ElementStyle="{StaticResource NumberCell}" />
+                                            <DataGridTextColumn Header="CPU" Binding="{Binding CpuText}" SortMemberPath="Group.TotalCpuMs" Width="70" ElementStyle="{StaticResource NumberCell}" />
+                                            <DataGridTextColumn Header="Reads" Binding="{Binding ReadsText}" SortMemberPath="Group.TotalLogicalReads" Width="90" ElementStyle="{StaticResource NumberCell}" />
+                                            <DataGridTextColumn Header="Mostly" Binding="{Binding WaitText}" Width="200" ElementStyle="{StaticResource TextCell}" />
+                                            <DataGridTextColumn Header="Last seen" Binding="{Binding LastSeen}" Width="120" ElementStyle="{StaticResource TextCell}" />
+                                            <DataGridTextColumn Header="Statement" Binding="{Binding StatementLine}" Width="*" ElementStyle="{StaticResource TextCell}" />
+                                        </DataGrid.Columns>
+                                    </DataGrid>
+                                </DockPanel>
+                            </TabItem>
+                        </TabControl>
+
+                        <TextBlock Grid.Row="4" Text="Selected query" FontWeight="SemiBold" Margin="0,6,0,2" />
+                        <TextBox Grid.Row="5" Text="{Binding Database.Details, Mode=OneWay}" IsReadOnly="True" FontFamily="Consolas"
+                                 TextWrapping="Wrap" VerticalScrollBarVisibility="Auto" />
+                    </Grid>
                 </Grid>
             </TabItem>
 

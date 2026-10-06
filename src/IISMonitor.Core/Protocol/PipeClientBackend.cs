@@ -104,6 +104,9 @@ public sealed class PipeClientBackend : IMonitorBackend
     public Task<List<string>> ListHistoryEntitiesAsync(EntityKind kind, CancellationToken cancellationToken = default) =>
         RequestAsync<List<string>>(PipeProtocol.ListEntities, kind, cancellationToken);
 
+    public Task<SlowQueryReport> QuerySlowQueriesAsync(SlowQueryRequest request, CancellationToken cancellationToken = default) =>
+        RequestAsync<SlowQueryReport>(PipeProtocol.QuerySlowQueries, request, cancellationToken);
+
     public Task<CommandResult> EnableIisEtwLoggingAsync(CancellationToken cancellationToken = default) =>
         RequestAsync<CommandResult>(PipeProtocol.EnableIisEtwLogging, new { }, cancellationToken);
 

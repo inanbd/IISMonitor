@@ -137,6 +137,8 @@ public sealed class PipeServer(IMonitorHost host, Func<NamedPipeServerStream> cr
                     await host.QueryHistoryAsync(request.Read<HistoryQuery>(), token).ConfigureAwait(false), request.Id),
                 PipeProtocol.ListEntities => Envelope.Create(PipeProtocol.Reply,
                     await host.ListHistoryEntitiesAsync(request.Read<EntityKind>(), token).ConfigureAwait(false), request.Id),
+                PipeProtocol.QuerySlowQueries => Envelope.Create(PipeProtocol.Reply,
+                    await host.QuerySlowQueriesAsync(request.Read<SlowQueryRequest>(), token).ConfigureAwait(false), request.Id),
                 PipeProtocol.EnableIisEtwLogging => Envelope.Create(PipeProtocol.Reply,
                     await host.EnableIisEtwLoggingAsync(token).ConfigureAwait(false), request.Id),
                 _ => Envelope.Create(PipeProtocol.Error, new ErrorPayload { Message = $"Unknown request '{request.Type}'." }, request.Id),

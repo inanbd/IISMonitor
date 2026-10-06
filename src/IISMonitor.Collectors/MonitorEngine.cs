@@ -50,7 +50,7 @@ public sealed class MonitorEngine : IMonitorHost, IAsyncDisposable
     private MonitorSnapshot? _latest;
     private KernelIoMonitor? _kernel;
     private IisLogMonitor? _iisLog;
-    private SqlSessionSampler? _sql;
+    private SqlActivitySampler? _sql;
     private string? _kernelError;
     private string? _iisLogError;
     private DateTime _kernelAttemptUtc;
@@ -198,7 +198,12 @@ public sealed class MonitorEngine : IMonitorHost, IAsyncDisposable
         var poolNames = topologyNow?.AppPools.Select(p => p.Name).ToList() ?? [];
         var workerPools = _workers.Resolve(processes, counters, poolNames);
         var members = ProcessTree.ResolvePoolMembers(processes, workerPools);
-        var samples = _sampler.Sample(members.Keys);
+        // The local SQL Server process is sampled too, for SQL Server CPU on the Server and Database views.
+        var sqlServerPids = processes
+            .Where(p => p.Name.Equals("sqlservr.exe", StringComparison.OrdinalIgnoreCase))
+            .Select(p => p.Pid)
+            .ToList();
+        var samples = _sampler.Sample(members.Keys.Concat(sqlServerPids));
         var unreadable = members.Count - samples.Count;
         health.Add(unreadable == 0
             ? Ok("Processes", $"{workerPools.Count} worker processes; {members.Count} processes in app pools.")
@@ -238,12 +243,16 @@ public sealed class MonitorEngine : IMonitorHost, IAsyncDisposable
             health.Add(Fail("SQL Server connections (TCP)", e.Message));
         }
 
-        Dictionary<int, DbSessionCount>? dbSessions = null;
+        DbActivityInput? dbActivity = null;
         if (_sql is { } sql)
         {
-            dbSessions = sql.Latest;
+            dbActivity = sql.Drain();
             var (ok, message) = sql.Status;
-            health.Add(ok ? Ok("SQL Server sessions (DMV)", message) : Fail("SQL Server sessions (DMV)", message));
+            health.Add(ok ? Ok("SQL Server activity", message) : Fail("SQL Server activity", message));
+        }
+        else
+        {
+            health.Add(Ok("SQL Server activity", "Not set up. Add a SQL Server connection string in Settings to see database load and slow queries per app pool."));
         }
 
         // Response times from the IIS ETW log stream.
@@ -285,7 +294,8 @@ public sealed class MonitorEngine : IMonitorHost, IAsyncDisposable
             EtwIo = etwIo,
             Counters = counters,
             DbConnectionsByPid = dbConnections,
-            DbSessionsByPid = dbSessions,
+            DbActivity = dbActivity,
+            SqlServerPids = sqlServerPids,
             ResponseBySite = responseBySite,
             ResponseByPool = responseByPool,
             System = system,
@@ -303,6 +313,19 @@ public sealed class MonitorEngine : IMonitorHost, IAsyncDisposable
     private void RecordHistory(MonitorSnapshot snapshot, MonitorSettings settings, DateTime now, IisTopology? topology)
     {
         _historyAggregator.Add(snapshot);
+        if (snapshot.Database is { CompletedSlow.Count: > 0 } database)
+        {
+            try
+            {
+                _history.WriteSlowQueries(database.CompletedSlow);
+            }
+            catch (Exception e)
+            {
+                _historyError = "Writing slow queries failed: " + e.Message;
+                Log("Writing slow queries failed.", e);
+            }
+        }
+
         if (_historyAggregator.WindowStartUtc is { } start && now - start >= TimeSpan.FromSeconds(settings.HistoryIntervalSeconds) - TimeSpan.FromMilliseconds(50))
             FlushHistory(now, topology);
 
@@ -367,7 +390,8 @@ public sealed class MonitorEngine : IMonitorHost, IAsyncDisposable
 
         var sqlChanged = previous is null
             || !previous.SqlServerConnectionStrings.SequenceEqual(settings.SqlServerConnectionStrings)
-            || previous.SqlSessionQueryIntervalSeconds != settings.SqlSessionQueryIntervalSeconds;
+            || previous.SqlActivityIntervalSeconds != settings.SqlActivityIntervalSeconds
+            || !previous.SlowQueryThresholdSeconds.Equals(settings.SlowQueryThresholdSeconds);
         if (sqlChanged)
         {
             if (_sql is { } old)
@@ -377,7 +401,10 @@ public sealed class MonitorEngine : IMonitorHost, IAsyncDisposable
             }
 
             if (settings.SqlServerConnectionStrings.Count > 0)
-                _sql = new SqlSessionSampler(settings.SqlServerConnectionStrings, TimeSpan.FromSeconds(settings.SqlSessionQueryIntervalSeconds));
+                _sql = new SqlActivitySampler(
+                    settings.SqlServerConnectionStrings,
+                    TimeSpan.FromSeconds(settings.SqlActivityIntervalSeconds),
+                    settings.SlowQueryThresholdSeconds * 1000);
         }
     }
 
@@ -471,6 +498,9 @@ public sealed class MonitorEngine : IMonitorHost, IAsyncDisposable
 
     public Task<HistoryResult> QueryHistoryAsync(HistoryQuery query, CancellationToken cancellationToken) =>
         Task.Run(() => _history.Query(query), cancellationToken);
+
+    public Task<SlowQueryReport> QuerySlowQueriesAsync(SlowQueryRequest request, CancellationToken cancellationToken) =>
+        Task.Run(() => _history.QuerySlowQueries(request), cancellationToken);
 
     public Task<List<string>> ListHistoryEntitiesAsync(EntityKind kind, CancellationToken cancellationToken) =>
         Task.Run(() => _history.ListEntities(kind, DateTime.UtcNow.AddDays(-Settings.HistoryRetentionDays)), cancellationToken);

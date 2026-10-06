@@ -54,6 +54,9 @@ public sealed class InProcessBackend : IMonitorBackend
     public Task<List<string>> ListHistoryEntitiesAsync(EntityKind kind, CancellationToken cancellationToken = default) =>
         _host.ListHistoryEntitiesAsync(kind, cancellationToken);
 
+    public Task<SlowQueryReport> QuerySlowQueriesAsync(SlowQueryRequest request, CancellationToken cancellationToken = default) =>
+        _host.QuerySlowQueriesAsync(request, cancellationToken);
+
     public Task<CommandResult> EnableIisEtwLoggingAsync(CancellationToken cancellationToken = default) =>
         _host.EnableIisEtwLoggingAsync(cancellationToken);
 

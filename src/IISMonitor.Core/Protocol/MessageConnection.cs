@@ -18,6 +18,7 @@ public static class PipeProtocol
     public const string UpdateSettings = "updateSettings";
     public const string QueryHistory = "queryHistory";
     public const string ListEntities = "listEntities";
+    public const string QuerySlowQueries = "querySlowQueries";
     public const string EnableIisEtwLogging = "enableIisEtwLogging";
 
     public static readonly JsonSerializerOptions Json = new()

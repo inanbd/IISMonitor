@@ -32,6 +32,8 @@ public interface IMonitorHost
 
     Task<List<string>> ListHistoryEntitiesAsync(EntityKind kind, CancellationToken cancellationToken);
 
+    Task<SlowQueryReport> QuerySlowQueriesAsync(SlowQueryRequest request, CancellationToken cancellationToken);
+
     /// <summary>Turns on IIS's ETW log target (and the log fields response-time tracking needs) for all sites.</summary>
     Task<CommandResult> EnableIisEtwLoggingAsync(CancellationToken cancellationToken);
 }
@@ -65,6 +67,8 @@ public interface IMonitorBackend : IAsyncDisposable
     Task<HistoryResult> QueryHistoryAsync(HistoryQuery query, CancellationToken cancellationToken = default);
 
     Task<List<string>> ListHistoryEntitiesAsync(EntityKind kind, CancellationToken cancellationToken = default);
+
+    Task<SlowQueryReport> QuerySlowQueriesAsync(SlowQueryRequest request, CancellationToken cancellationToken = default);
 
     Task<CommandResult> EnableIisEtwLoggingAsync(CancellationToken cancellationToken = default);
 }

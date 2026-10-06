@@ -26,13 +26,21 @@ public sealed class MonitorSettings
     public bool DetectLocalSqlServerPorts { get; set; } = true;
 
     /// <summary>
-    /// Optional connection strings used to ask SQL Server for its sessions per client process.
-    /// This also counts shared-memory and named-pipe connections and splits active from idle.
-    /// The login needs the VIEW SERVER STATE permission.
+    /// Optional connection strings of SQL Servers to watch. Every second the service asks each one
+    /// which queries are running and which client process sent them: that gives database load and
+    /// slow queries per app pool, and sessions per pool including shared-memory and named-pipe
+    /// connections. The login needs the VIEW SERVER STATE permission.
     /// </summary>
     public List<string> SqlServerConnectionStrings { get; set; } = [];
 
-    public int SqlSessionQueryIntervalSeconds { get; set; } = 5;
+    /// <summary>
+    /// How often SQL Server is asked which queries are running. One second keeps database load
+    /// accurate and catches every query that runs longer than the slow-query threshold.
+    /// </summary>
+    public int SqlActivityIntervalSeconds { get; set; } = 1;
+
+    /// <summary>Queries running at least this long are recorded as slow queries.</summary>
+    public double SlowQueryThresholdSeconds { get; set; } = 2;
 
     /// <summary>Kernel ETW tracing for per-process disk and network bytes.</summary>
     public bool EnableKernelTracing { get; set; } = true;
@@ -54,7 +62,10 @@ public sealed class MonitorSettings
             .Where(s => s.Length > 0)
             .Distinct()
             .ToList();
-        copy.SqlSessionQueryIntervalSeconds = Math.Clamp(copy.SqlSessionQueryIntervalSeconds, 1, 300);
+        copy.SqlActivityIntervalSeconds = Math.Clamp(copy.SqlActivityIntervalSeconds, 1, 10);
+        copy.SlowQueryThresholdSeconds = double.IsFinite(copy.SlowQueryThresholdSeconds)
+            ? Math.Clamp(copy.SlowQueryThresholdSeconds, 0.5, 3600)
+            : 2;
         return copy;
     }
 
@@ -69,5 +80,7 @@ public static class SettingsJson
         WriteIndented = true,
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
         DefaultIgnoreCondition = JsonIgnoreCondition.Never,
+        // Settings can arrive over the pipe with NaN/Infinity; Normalize() replaces them.
+        NumberHandling = JsonNumberHandling.AllowNamedFloatingPointLiterals,
     };
 }

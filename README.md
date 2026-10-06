@@ -28,6 +28,8 @@ Target platforms: **Windows Server 2022 and 2025** (IIS 10), x64.
 | Request queue length | app pool | `HTTP Service Request Queues` performance counters |
 | SQL Server connections | app pool, process | Established TCP connections from the pool's processes to SQL Server ports (1433, plus any port a local `sqlservr.exe` listens on, plus ports you add) |
 | SQL Server sessions (active / idle) | app pool, process | *Optional.* `sys.dm_exec_sessions` on the SQL Servers you configure (`host_process_id` is the client PID) |
+| Database load, blocking, slow queries | app pool | *Optional.* Every second, the running requests in `sys.dm_exec_requests`, matched to app pools by client PID (see [Database tab](#database-tab)) |
+| SQL Server CPU and memory | server | The local `sqlservr.exe` process |
 | Response time avg / p95 / max, 4xx and 5xx/sec | site and app pool | IIS sends each finished request to ETW (the `Microsoft-Windows-IIS-Logging` provider), including `time-taken` |
 | Server CPU and memory | server | `GetSystemTimes`, `GlobalMemoryStatusEx` |
 
@@ -52,8 +54,8 @@ Target platforms: **Windows Server 2022 and 2025** (IIS 10), x64.
    use central binary logging can't be traced.
 4. **SQL Server connection counting over TCP** sees network connections. If an app talks to a
    SQL Server on the same machine over shared memory or named pipes, add a connection string
-   under *Settings → SQL Server sessions*: SQL Server then reports the sessions itself, active
-   versus idle included.
+   in *Settings*: SQL Server then reports the sessions itself, active versus idle included,
+   and the Database tab lights up.
 5. **CPU %** is a share of the whole machine (all cores), like Task Manager's Processes tab.
 6. Pools that are idle (no worker process yet) show 0 processes, not an error. Process IDs
    change on every recycle; the app re-maps them on every update.
@@ -142,7 +144,9 @@ You can also run `IISMonitor.exe` without installing the service. It then collec
   process count.
 - **Sites**: connections, requests/sec, bandwidth, response time (avg / p95 / max) and 4xx/5xx
   per site, with live charts.
-- **Server**: whole-machine CPU and memory.
+- **Database**: which app pools keep SQL Server busy, what they are running right now and
+  their slow queries (see below).
+- **Server**: whole-machine CPU and memory, plus the local SQL Server process.
 - **History**: pick an app pool, site or the server and a range (last hour to last 7 days).
   Longer ranges are merged into wider points (for example 7 days → about 7-minute points).
   Averages stay averages; maximums and p95 show the worst value in each point.
@@ -153,13 +157,57 @@ You can also run `IISMonitor.exe` without installing the service. It then collec
 - **Settings…**: history resolution and retention, SQL Server ports and optional session
   queries, and switches for the two ETW traces.
 
+## Database tab
+
+Shows which app pool is loading SQL Server, and with which queries. It needs one connection
+string per SQL Server under *Settings*, with a login that has `VIEW SERVER STATE`; nothing is
+installed on the SQL Server and no trace is started. For a SQL Server on the IIS server, with the
+service running as LocalSystem:
+
+```sql
+IF SUSER_ID(N'NT AUTHORITY\SYSTEM') IS NULL CREATE LOGIN [NT AUTHORITY\SYSTEM] FROM WINDOWS;
+GRANT VIEW SERVER STATE TO [NT AUTHORITY\SYSTEM];
+```
+
+and the connection string `Server=.;Integrated Security=true;TrustServerCertificate=true`.
+
+Every second (*Settings*, 1–10 s) the service asks SQL Server which queries are running and
+which client process sent them (`host_process_id`), and maps that process to its app pool:
+
+- **DB load**: the average number of the pool's queries running at once. 1.00 means one query
+  busy all the time; it is split into *on CPU* and *waiting*. Sampling every second makes this
+  accurate over a minute or so even for queries of a few milliseconds. SQL Server's own
+  per-session totals can't be used for this: they only update when a query finishes and reset
+  every time a pooled connection is reused, which is constantly in a web app.
+- **Blocked now / Blocking others**: the pool's queries waiting for another session's locks,
+  and other sessions waiting for this pool's locks. **Idle in transaction** counts sessions that
+  hold a transaction open while doing nothing, a common cause of blocking.
+- **Running now**: every query from this server running at that moment, longest first, with
+  what it is doing (on CPU, waiting for a lock, reading from disk, waiting for the app to read
+  results…) and who blocks it.
+- **Slow queries**: every query that runs longer than the threshold (**2 seconds** by default,
+  *Settings*) is recorded when it finishes, with its app pool, database, duration, CPU, reads,
+  main wait and statement, kept with the rest of the history. The list groups runs of the same
+  query and sorts by total time, so the costliest queries come first. Durations come from the
+  samples, so a query ran at least as long as shown, and at most one sample interval longer.
+- Statements are stored and shown with literal values replaced by `?`
+  (`WHERE Email = 'x@y.com'` → `WHERE Email = ?`), so customer data isn't copied into the history.
+- Charts show database load and blocked queries per app pool for the pools ticked on the
+  Overview tab. The App pools grid also has a **DB load** column, and pool history keeps DB
+  load, blocking and slow-query counts.
+- Waits by design are ignored: Service Broker and `SqlDependency` listeners, `WAITFOR` and
+  trace readers would otherwise look like endless slow queries.
+- A query is matched to this server only if its client reports this computer's name as host name
+  (the default); connection strings that set `Workstation ID` show up as "other servers".
+
 ## Data and security
 
 - Settings: `%ProgramData%\IISMonitor\settings.json`. History: `%ProgramData%\IISMonitor\history.db`.
   When the app creates that folder, it restricts access to Administrators and SYSTEM, because the
   settings can contain SQL Server connection strings. Prefer `Integrated Security=true`: the service
-  runs as LocalSystem and signs in to a remote SQL Server as the computer account
-  (`DOMAIN\SERVER$`). That login needs `VIEW SERVER STATE`.
+  runs as LocalSystem and signs in to a local SQL Server as `NT AUTHORITY\SYSTEM` and to a remote
+  one as the computer account (`DOMAIN\SERVER$`). That login needs `VIEW SERVER STATE`.
+- Slow-query statements are kept without literal values, in the same history database.
 - The dashboard talks to the service over a local named pipe that only Administrators and
   SYSTEM can open. Nothing listens on the network.
 - History size: about 60,000 rows per app pool or site per week at 10-second resolution.

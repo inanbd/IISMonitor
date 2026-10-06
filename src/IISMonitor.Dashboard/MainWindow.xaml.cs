@@ -24,6 +24,7 @@ public partial class MainWindow : Window
         DataContext = _viewModel;
 
         OverviewCharts.SetCharts(OverviewViewModel.Charts);
+        DatabaseCharts.SetCharts(DatabaseViewModel.Charts);
         PoolCharts.SetCharts(MetricCatalog.Charts(EntityKind.AppPool));
         SiteCharts.SetCharts(MetricCatalog.Charts(EntityKind.Site));
         ServerCharts.SetCharts(MetricCatalog.Charts(EntityKind.Server));
@@ -38,9 +39,12 @@ public partial class MainWindow : Window
     {
         if (!ReferenceEquals(e.OriginalSource, Tabs))
             return;
+        _viewModel.IsDatabaseTabVisible = ReferenceEquals(Tabs.SelectedItem, DatabaseTab);
         RenderLiveCharts();
         if (ReferenceEquals(Tabs.SelectedItem, HistoryTab))
             _ = _viewModel.History.ReloadEntitiesAsync();
+        if (_viewModel.IsDatabaseTabVisible)
+            _ = _viewModel.Database.RefreshSlowAsync(force: true);
     }
 
     /// <summary>Only the visible tab's charts are drawn.</summary>
@@ -56,6 +60,11 @@ public partial class MainWindow : Window
             Render(PoolCharts, EntityKind.AppPool, _viewModel.SelectedPool?.Name);
         else if (ReferenceEquals(tab, SitesTab))
             Render(SiteCharts, EntityKind.Site, _viewModel.SelectedSite?.Name);
+        else if (ReferenceEquals(tab, DatabaseTab))
+        {
+            DatabaseCharts.EmptyText = _viewModel.Overview.EmptyText;
+            DatabaseCharts.Render(_viewModel.OverviewSeries, _viewModel.LiveRange(), _viewModel.OverviewTitle);
+        }
         else if (ReferenceEquals(tab, ServerTab))
             Render(ServerCharts, EntityKind.Server, "");
     }

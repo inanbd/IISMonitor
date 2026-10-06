@@ -52,7 +52,12 @@ public sealed class HistoryAggregator
                 if (metric.Aggregation == WindowAggregation.ResponseWindow)
                     continue;
                 values[metric.Key] = accumulators.TryGetValue(metric.SourceKey, out var acc)
-                    ? metric.Aggregation == WindowAggregation.Max ? acc.Max : acc.Average
+                    ? metric.Aggregation switch
+                    {
+                        WindowAggregation.Max => acc.Max,
+                        WindowAggregation.Sum => acc.Sum,
+                        _ => acc.Average,
+                    }
                     : null;
             }
 
@@ -96,6 +101,8 @@ public sealed class HistoryAggregator
         public double? Max { get; private set; }
 
         public double? Average => _count == 0 ? null : _sum / _count;
+
+        public double? Sum => _count == 0 ? null : _sum;
 
         public void Add(double value)
         {

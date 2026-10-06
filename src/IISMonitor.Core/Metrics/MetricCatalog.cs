@@ -25,6 +25,9 @@ public enum WindowAggregation
     Average,
     Max,
 
+    /// <summary>Total over the window (for per-update counts such as slow queries finished).</summary>
+    Sum,
+
     /// <summary>Taken from the response-time window that is drained when the history row is written.</summary>
     ResponseWindow,
 }
@@ -70,6 +73,11 @@ public static class MetricCatalog
         Max("db_conn_max", "DB connections (max)", MetricUnit.Count, "db_conn"),
         Avg("db_sessions", "DB sessions (SQL)", MetricUnit.Count),
         Avg("db_active", "DB active sessions", MetricUnit.Count),
+        Avg("db_load", "DB load (running queries)", MetricUnit.Count),
+        Avg("db_cpu_load", "DB load on CPU", MetricUnit.Count),
+        Max("db_blocked", "Blocked queries", MetricUnit.Count),
+        Max("db_blocking", "Queries it blocks", MetricUnit.Count),
+        Sum("db_slow", "Slow queries finished", MetricUnit.Count),
         Avg("rps", "Requests/sec", MetricUnit.PerSecond),
         Avg("active_requests", "Active requests", MetricUnit.Count),
         Max("queue", "Queue length", MetricUnit.Count),
@@ -92,6 +100,8 @@ public static class MetricCatalog
         Max("cpu_max", "CPU % (max)", MetricUnit.Percent, "cpu"),
         Avg("mem_used", "Memory used", MetricUnit.Bytes),
         Avg("mem_total", "Memory total", MetricUnit.Bytes),
+        Avg("sql_cpu", "SQL Server CPU %", MetricUnit.Percent),
+        Avg("sql_mem", "SQL Server memory", MetricUnit.Bytes),
     ];
 
     private static readonly ChartDefinition[] PoolCharts =
@@ -101,6 +111,8 @@ public static class MetricCatalog
         new("Disk I/O", MetricUnit.BytesPerSecond, ["disk_read", "disk_write"]),
         new("Network (site traffic + outbound)", MetricUnit.BytesPerSecond, ["http_sent", "http_recv", "net_sent", "net_recv"]),
         new("Database connections", MetricUnit.Count, ["db_conn", "db_conn_max", "db_sessions", "db_active"]),
+        new("Database load", MetricUnit.Count, ["db_load", "db_cpu_load", "db_blocked", "db_blocking"]),
+        new("Slow queries finished", MetricUnit.Count, ["db_slow"]),
         new("Requests/sec", MetricUnit.PerSecond, ["rps"]),
         new("Response time", MetricUnit.Milliseconds, ["resp_avg", "resp_p95", "resp_max"]),
         new("Active requests & queue", MetricUnit.Count, ["active_requests", "queue"]),
@@ -119,8 +131,8 @@ public static class MetricCatalog
 
     private static readonly ChartDefinition[] ServerCharts =
     [
-        new("CPU", MetricUnit.Percent, ["cpu", "cpu_max"]),
-        new("Memory", MetricUnit.Bytes, ["mem_used", "mem_total"]),
+        new("CPU", MetricUnit.Percent, ["cpu", "cpu_max", "sql_cpu"]),
+        new("Memory", MetricUnit.Bytes, ["mem_used", "mem_total", "sql_mem"]),
     ];
 
     public static IReadOnlyList<MetricDefinition> Metrics(EntityKind kind) => kind switch
@@ -160,6 +172,11 @@ public static class MetricCatalog
             ["db_conn"] = pool.DbConnections,
             ["db_sessions"] = pool.DbSessions,
             ["db_active"] = pool.DbActiveSessions,
+            ["db_load"] = pool.DbLoad,
+            ["db_cpu_load"] = pool.DbCpuLoad,
+            ["db_blocked"] = pool.DbBlocked,
+            ["db_blocking"] = pool.DbBlocking,
+            ["db_slow"] = pool.DbSlowCompleted,
             ["rps"] = pool.RequestsPerSec,
             ["active_requests"] = pool.ActiveRequests,
             ["queue"] = pool.QueueLength,
@@ -186,6 +203,8 @@ public static class MetricCatalog
         ["cpu"] = server.CpuPercent,
         ["mem_used"] = server.MemoryUsedBytes,
         ["mem_total"] = server.MemoryTotalBytes,
+        ["sql_cpu"] = server.SqlServerCpuPercent,
+        ["sql_mem"] = server.SqlServerMemoryBytes,
     };
 
     /// <summary>
@@ -229,6 +248,9 @@ public static class MetricCatalog
 
     private static MetricDefinition Avg(string key, string name, MetricUnit unit) =>
         new(key, name, unit, WindowAggregation.Average, $"AVG({key})", key);
+
+    private static MetricDefinition Sum(string key, string name, MetricUnit unit) =>
+        new(key, name, unit, WindowAggregation.Sum, $"SUM({key})", key);
 
     private static MetricDefinition Max(string key, string name, MetricUnit unit, string? source = null) =>
         new(key, name, unit, WindowAggregation.Max, $"MAX({key})", source ?? key, HistoryOnly: source is not null);
