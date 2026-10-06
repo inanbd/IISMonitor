@@ -8,8 +8,10 @@
 
         publish\Service\IISMonitor.Service.exe
         publish\Dashboard\IISMonitor.exe
-        publish\install-service.ps1, uninstall-service.ps1
+        publish\install-service.cmd (+ .ps1), uninstall-service.cmd (+ .ps1)
 
+.EXAMPLE
+    scripts\publish.cmd      (works even when PowerShell scripts are blocked by execution policy)
 .EXAMPLE
     .\scripts\publish.ps1
     .\scripts\publish.ps1 -Output D:\drop\IISMonitor -Runtime win-arm64
@@ -34,9 +36,10 @@ if ($LASTEXITCODE -ne 0) { throw 'Publishing the service failed.' }
 dotnet publish (Join-Path $root 'src\IISMonitor.Dashboard') @common -o (Join-Path $Output 'Dashboard')
 if ($LASTEXITCODE -ne 0) { throw 'Publishing the dashboard failed.' }
 
-Copy-Item (Join-Path $PSScriptRoot 'install-service.ps1') $Output -Force
-Copy-Item (Join-Path $PSScriptRoot 'uninstall-service.ps1') $Output -Force
+foreach ($script in 'install-service.ps1', 'install-service.cmd', 'uninstall-service.ps1', 'uninstall-service.cmd') {
+    Copy-Item (Join-Path $PSScriptRoot $script) $Output -Force
+}
 
 Write-Host ""
 Write-Host "Published to $(Resolve-Path $Output)" -ForegroundColor Green
-Write-Host "Copy that folder to the IIS server, then run install-service.ps1 there as administrator."
+Write-Host "Copy that folder to the IIS server, then right-click install-service.cmd there and choose Run as administrator."

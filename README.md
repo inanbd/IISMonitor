@@ -95,25 +95,28 @@ dotnet test
 
 To produce something you can copy to a server (self-contained, so the server needs no .NET runtime):
 
-```powershell
-.\scripts\publish.ps1            # → .\publish\Service, .\publish\Dashboard, install scripts
+```bat
+scripts\publish.cmd            :: → publish\Service, publish\Dashboard, install scripts
 ```
+
+The `.cmd` files run the matching `.ps1` with `-ExecutionPolicy Bypass` for that one run, so
+they work even where Windows blocks PowerShell scripts ("running scripts is disabled on this
+system") without changing the machine's policy. Equivalent by hand:
+`powershell -ExecutionPolicy Bypass -File .\scripts\publish.ps1`.
 
 ## Install on an IIS server
 
 1. Copy the `publish` folder to the server.
-2. In an **elevated** PowerShell in that folder:
-   ```powershell
-   .\install-service.ps1
-   ```
+2. Right-click `install-service.cmd` and choose **Run as administrator**
+   (or run `install-service.cmd` from an elevated command prompt).
    This copies the app to `C:\Program Files\IISMonitor`, registers and starts the `IISMonitor`
    service (automatic start, restarts on failure) and adds an **IIS Monitor** Start menu shortcut.
 3. Open **IIS Monitor** from the Start menu (it asks for administrator rights).
 4. If the toolbar shows **Enable response times**, click it once to turn on live response times.
 
-To update, publish again and re-run `install-service.ps1`; it stops the service, replaces the
-files and starts it again. To remove it: `.\uninstall-service.ps1` (add `-RemoveData` to also
-delete history and settings).
+To update, publish again and re-run `install-service.cmd`; it stops the service, replaces the
+files and starts it again. To remove it: `uninstall-service.cmd` as administrator (add
+`-RemoveData` to also delete history and settings).
 
 You can also run `IISMonitor.exe` without installing the service. It then collects data itself
 (a banner says so) and records history only while it is open.
