@@ -19,11 +19,14 @@ public partial class SettingsWindow : Window
     ];
 
     private readonly MonitorSettings _settings;
+    private readonly List<TrackedPoolChoice> _poolChoices;
 
-    public SettingsWindow(MonitorSettings settings, bool standalone)
+    /// <param name="appPools">App pools IIS has now, offered for IP and URL tracking.</param>
+    public SettingsWindow(MonitorSettings settings, bool standalone, IReadOnlyList<string> appPools)
     {
         InitializeComponent();
         _settings = settings;
+        MaxHeight = SystemParameters.WorkArea.Height;
 
         SampleInterval.ItemsSource = SampleOptions;
         SampleInterval.SelectedItem = SampleOptions.FirstOrDefault(o => o.Milliseconds == settings.SampleIntervalMs) ?? SampleOptions[2];
@@ -37,6 +40,18 @@ public partial class SettingsWindow : Window
         KernelTracing.IsChecked = settings.EnableKernelTracing;
         ResponseTracing.IsChecked = settings.EnableResponseTimeTracing;
         StandaloneNote.Visibility = standalone ? Visibility.Visible : Visibility.Collapsed;
+
+        // Every pool IIS has, plus tracked pools that are gone (so they can be unticked).
+        var tracked = new HashSet<string>(settings.RequestTrackingPools, StringComparer.OrdinalIgnoreCase);
+        var current = new HashSet<string>(appPools, StringComparer.OrdinalIgnoreCase);
+        _poolChoices = current
+            .Select(pool => new TrackedPoolChoice(pool, pool, tracked.Contains(pool)))
+            .Concat(tracked.Where(pool => !current.Contains(pool)).Select(pool => new TrackedPoolChoice(pool, pool + " (not in IIS now)", true)))
+            .OrderBy(choice => choice.Name, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        TrackedPools.ItemsSource = _poolChoices;
+        NoPools.Visibility = _poolChoices.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+        RequestRetentionDays.Text = settings.RequestLogRetentionDays.ToString(CultureInfo.CurrentCulture);
     }
 
     public MonitorSettings? Result { get; private set; }
@@ -54,6 +69,20 @@ public partial class SettingsWindow : Window
             || slowSeconds < 0.5 || slowSeconds > 3600)
         {
             ShowError("Slow query: enter a number of seconds from 0.5 to 3600.");
+            return;
+        }
+
+        if (!int.TryParse(RequestRetentionDays.Text.Trim(), NumberStyles.Integer, CultureInfo.CurrentCulture, out var requestDays)
+            || requestDays < 1 || requestDays > MonitorSettings.MaxRequestLogRetentionDays)
+        {
+            ShowError($"Keep recorded requests for: enter a number of days from 1 to {MonitorSettings.MaxRequestLogRetentionDays}.");
+            return;
+        }
+
+        var trackedPools = _poolChoices.Where(choice => choice.IsChecked).Select(choice => choice.Name).ToList();
+        if (trackedPools.Count > 0 && ResponseTracing.IsChecked != true)
+        {
+            ShowError("IP and URL tracking uses the IIS ETW log stream: also tick Live response times.");
             return;
         }
 
@@ -81,6 +110,8 @@ public partial class SettingsWindow : Window
         result.SlowQueryThresholdSeconds = slowSeconds;
         result.EnableKernelTracing = KernelTracing.IsChecked == true;
         result.EnableResponseTimeTracing = ResponseTracing.IsChecked == true;
+        result.RequestTrackingPools = trackedPools;
+        result.RequestLogRetentionDays = requestDays;
 
         Result = result;
         DialogResult = true;
@@ -91,4 +122,12 @@ public partial class SettingsWindow : Window
         Error.Text = message;
         Error.Visibility = Visibility.Visible;
     }
+}
+
+/// <summary>An app pool in the settings' IP and URL tracking list.</summary>
+public sealed class TrackedPoolChoice(string name, string label, bool isChecked)
+{
+    public string Name { get; } = name;
+    public string Label { get; } = label;
+    public bool IsChecked { get; set; } = isChecked;
 }

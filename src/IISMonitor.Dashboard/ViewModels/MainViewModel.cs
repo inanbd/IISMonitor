@@ -8,6 +8,7 @@ using IISMonitor.Core.Metrics;
 using IISMonitor.Core.Models;
 using IISMonitor.Core.Presentation;
 using IISMonitor.Core.Protocol;
+using IISMonitor.Core.RequestLog;
 using IISMonitor.Core.Settings;
 using IISMonitor.Dashboard.Controls;
 using IISMonitor.Dashboard.Services;
@@ -76,8 +77,14 @@ public sealed class MainViewModel : ObservableObject, IAsyncDisposable
         Overview = new OverviewViewModel(new DashboardPreferencesStore(DashboardPreferencesStore.DefaultPath));
         Overview.SelectionChanged += (_, _) => LiveChartsInvalidated?.Invoke(this, EventArgs.Empty);
         Database = new DatabaseViewModel(() => _backend, ReportError);
+        Traffic = new TrafficViewModel(
+            () => _backend,
+            ReportError,
+            (title, message, isError) => ShowMessage(title, message, isError),
+            prompt => PromptBlockIp(prompt),
+            () => EnableResponseTimesAsync("Turn on client IP logging"));
         StartServiceCommand = new AsyncCommand(StartServiceAsync, ReportError, () => CanStartService);
-        EnableResponseTimesCommand = new AsyncCommand(EnableResponseTimesAsync, ReportError, () => _backend is not null);
+        EnableResponseTimesCommand = new AsyncCommand(() => EnableResponseTimesAsync("Enable live response times"), ReportError, () => _backend is not null);
         TogglePauseCommand = new RelayCommand(() => IsPaused = !IsPaused);
     }
 
@@ -86,6 +93,9 @@ public sealed class MainViewModel : ObservableObject, IAsyncDisposable
 
     /// <summary>Shows a message (title, message, isError). Set by the window.</summary>
     public Action<string, string, bool> ShowMessage { get; set; } = (_, _, _) => { };
+
+    /// <summary>Asks where to block an IP address; null when the user cancels. Set by the window.</summary>
+    public Func<IpBlockPrompt, IpBlockRequest?> PromptBlockIp { get; set; } = _ => null;
 
     /// <summary>Raised on the UI thread whenever live charts should be redrawn.</summary>
     public event EventHandler? LiveChartsInvalidated;
@@ -99,9 +109,17 @@ public sealed class MainViewModel : ObservableObject, IAsyncDisposable
     public HistoryViewModel History { get; }
     public OverviewViewModel Overview { get; }
     public DatabaseViewModel Database { get; }
+    public TrafficViewModel Traffic { get; }
 
     /// <summary>Set by the window: the Database tab is showing (its slow-query list refreshes only then).</summary>
     public bool IsDatabaseTabVisible { get; set; }
+
+    /// <summary>Set by the window: the IPs &amp; URLs tab is showing (it asks the collector for requests only then).</summary>
+    public bool IsTrafficTabVisible
+    {
+        get => Traffic.IsVisible;
+        set => Traffic.IsVisible = value;
+    }
 
     public IReadOnlyList<IntervalOption> IntervalOptions { get; }
     public IReadOnlyList<WindowOption> WindowOptions { get; }
@@ -341,6 +359,8 @@ public sealed class MainViewModel : ObservableObject, IAsyncDisposable
         MachineName = snapshot.Server.MachineName;
         Overview.Sync(snapshot.AppPools);
         Database.Apply(snapshot, _backend?.Settings.SqlServerConnectionStrings.Count > 0, IsDatabaseTabVisible);
+        if (_backend is { } backend)
+            Traffic.Apply(snapshot, backend.Settings, IsTrafficTabVisible);
         Sync(Pools, snapshot.AppPools, p => p.Name, name => new AppPoolRow(name), (row, m) => row.Update(m));
         Sync(Sites, snapshot.Sites, s => s.Name, name => new SiteRow(name), (row, m) => row.Update(m));
         RefreshSelectedPool();
@@ -473,6 +493,7 @@ public sealed class MainViewModel : ObservableObject, IAsyncDisposable
 
             _selectedInterval = match;
             Raise(nameof(SelectedInterval));
+            Traffic.ApplySettings(settings);
         }
         finally
         {
@@ -553,22 +574,24 @@ public sealed class MainViewModel : ObservableObject, IAsyncDisposable
         ShowMessage("IIS Monitor", "The service started but isn't accepting connections yet. Check the Windows Application event log for IISMonitor errors.", true);
     }
 
-    private async Task EnableResponseTimesAsync()
+    /// <summary>Turns on IIS's ETW log target and the log fields live response times and IP and URL tracking need.</summary>
+    private async Task EnableResponseTimesAsync(string title)
     {
         if (_backend is not { } backend)
             return;
 
         var ok = Confirm(
-            "Enable live response times",
+            title,
             "IIS Monitor will change the IIS logging configuration (applicationHost.config):\n\n" +
             "• The W3C log target becomes \"File, ETW\": log files are still written as before, and each request is also sent to ETW.\n" +
-            "• The log fields site name, URI stem, HTTP status and time-taken are switched on if they are off.\n\n" +
+            "• The log fields site name, URI stem, HTTP status and time-taken are switched on if they are off, " +
+            "and so are client IP, method and substatus (used by the IPs & URLs tab).\n\n" +
             "This applies to the site defaults and to any site that overrides them. Continue?");
         if (!ok)
             return;
 
         var result = await backend.EnableIisEtwLoggingAsync();
-        ShowMessage("Enable live response times", result.Message, !result.Success);
+        ShowMessage(title, result.Message, !result.Success);
     }
 
     private static ServiceControllerStatus? GetServiceStatus()

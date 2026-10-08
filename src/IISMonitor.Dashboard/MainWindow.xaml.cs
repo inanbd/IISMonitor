@@ -20,6 +20,11 @@ public partial class MainWindow : Window
                 MessageBox.Show(this, message, title, MessageBoxButton.OKCancel, MessageBoxImage.Question) == MessageBoxResult.OK,
             ShowMessage = (title, message, isError) =>
                 MessageBox.Show(this, message, title, MessageBoxButton.OK, isError ? MessageBoxImage.Warning : MessageBoxImage.Information),
+            PromptBlockIp = prompt =>
+            {
+                var dialog = new BlockIpWindow(prompt) { Owner = this };
+                return dialog.ShowDialog() == true ? dialog.Result : null;
+            },
         };
         DataContext = _viewModel;
 
@@ -32,6 +37,12 @@ public partial class MainWindow : Window
 
         _viewModel.LiveChartsInvalidated += (_, _) => RenderLiveCharts();
         _viewModel.History.ResultChanged += (_, _) => RenderHistoryCharts();
+        _viewModel.Traffic.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName is nameof(TrafficViewModel.IsIpView) or nameof(TrafficViewModel.IsEachMinute))
+                UpdateTrafficColumns();
+        };
+        UpdateTrafficColumns();
         Loaded += async (_, _) => await _viewModel.InitializeAsync();
     }
 
@@ -40,11 +51,34 @@ public partial class MainWindow : Window
         if (!ReferenceEquals(e.OriginalSource, Tabs))
             return;
         _viewModel.IsDatabaseTabVisible = ReferenceEquals(Tabs.SelectedItem, DatabaseTab);
+        _viewModel.IsTrafficTabVisible = ReferenceEquals(Tabs.SelectedItem, TrafficTab);
         RenderLiveCharts();
         if (ReferenceEquals(Tabs.SelectedItem, HistoryTab))
             _ = _viewModel.History.ReloadEntitiesAsync();
         if (_viewModel.IsDatabaseTabVisible)
             _ = _viewModel.Database.RefreshSlowAsync(force: true);
+        if (_viewModel.IsTrafficTabVisible)
+            _ = _viewModel.Traffic.RefreshAsync();
+    }
+
+    /// <summary>
+    /// The IPs &amp; URLs grids show the columns of the chosen view: by IP (URLs per IP, Blocked) or by URL
+    /// (IP addresses per URL); the detail grid shows Time only for "Each minute".
+    /// </summary>
+    private void UpdateTrafficColumns()
+    {
+        var traffic = _viewModel.Traffic;
+        var byIp = traffic.IsIpView;
+        TrafficIpColumn.Visibility = Show(byIp);
+        TrafficUrlsColumn.Visibility = Show(byIp);
+        TrafficBlockedColumn.Visibility = Show(byIp);
+        TrafficUrlColumn.Visibility = Show(!byIp);
+        TrafficIpsColumn.Visibility = Show(!byIp);
+        TrafficDetailUrlColumn.Visibility = Show(byIp);
+        TrafficDetailIpColumn.Visibility = Show(!byIp);
+        TrafficTimeColumn.Visibility = Show(traffic.IsEachMinute);
+
+        static Visibility Show(bool visible) => visible ? Visibility.Visible : Visibility.Collapsed;
     }
 
     /// <summary>Only the visible tab's charts are drawn.</summary>
@@ -93,7 +127,8 @@ public partial class MainWindow : Window
         if (_viewModel.Backend is not { } backend)
             return;
 
-        var dialog = new SettingsWindow(backend.Settings.Clone(), backend.IsStandalone) { Owner = this };
+        var pools = _viewModel.Pools.Select(p => p.Name).ToList();
+        var dialog = new SettingsWindow(backend.Settings.Clone(), backend.IsStandalone, pools) { Owner = this };
         if (dialog.ShowDialog() != true || dialog.Result is not { } settings)
             return;
 

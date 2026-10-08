@@ -23,79 +23,117 @@
         </Style>
     </Window.Resources>
 
-    <StackPanel Margin="16">
-        <TextBlock x:Name="StandaloneNote" TextWrapping="Wrap" Margin="0,0,0,10" Foreground="#8A6D00" Visibility="Collapsed"
-                   Text="Standalone mode: these settings are saved to the same file the service uses, so they apply to it too once it is installed." />
-
-        <GroupBox Header="Sampling and history" Padding="8">
-            <Grid>
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="200" />
-                    <ColumnDefinition Width="*" />
-                </Grid.ColumnDefinitions>
-                <Grid.RowDefinitions>
-                    <RowDefinition />
-                    <RowDefinition />
-                    <RowDefinition />
-                    <RowDefinition />
-                </Grid.RowDefinitions>
-
-                <TextBlock Text="Live update every" Style="{StaticResource Label}" />
-                <ComboBox x:Name="SampleInterval" Grid.Column="1" Margin="0,4" DisplayMemberPath="Label" />
-
-                <TextBlock Grid.Row="1" Text="History resolution" Style="{StaticResource Label}" />
-                <ComboBox x:Name="HistoryInterval" Grid.Row="1" Grid.Column="1" Margin="0,4" DisplayMemberPath="Label" />
-
-                <TextBlock Grid.Row="2" Text="Keep history for (days)" Style="{StaticResource Label}" />
-                <TextBox x:Name="RetentionDays" Grid.Row="2" Grid.Column="1" Width="80" HorizontalAlignment="Left" />
-
-                <TextBlock Grid.Row="3" Grid.Column="1" Style="{StaticResource Hint}"
-                           Text="History stores one averaged row per app pool, site and the server per resolution step (plus maximums for CPU, connections and response time). 7 days at 10 seconds is roughly 60,000 rows per item." />
-            </Grid>
-        </GroupBox>
-
-        <GroupBox Header="SQL Server connections" Padding="8" Margin="0,10,0,0">
-            <StackPanel>
-                <Grid>
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="200" />
-                        <ColumnDefinition Width="*" />
-                    </Grid.ColumnDefinitions>
-                    <TextBlock Text="SQL Server ports" Style="{StaticResource Label}" />
-                    <TextBox x:Name="SqlPorts" Grid.Column="1" ToolTip="Comma-separated, for example 1433, 50123" />
-                </Grid>
-                <CheckBox x:Name="DetectLocalSql" Content="Also count connections to any port a local SQL Server (sqlservr.exe) listens on" />
-                <TextBlock Style="{StaticResource Hint}"
-                           Text="Connections are counted from the Windows TCP table: open connections from each app pool's processes to these ports." />
-
-                <TextBlock Text="SQL Server activity: database load, sessions and slow queries per app pool (one connection string per line)" Margin="0,8,0,2" TextWrapping="Wrap" />
-                <TextBox x:Name="SqlConnectionStrings" AcceptsReturn="True" Height="70" VerticalScrollBarVisibility="Auto"
-                         FontFamily="Consolas" TextWrapping="NoWrap" HorizontalScrollBarVisibility="Auto" />
-                <TextBlock Style="{StaticResource Hint}"
-                           Text="Example: Server=.;Integrated Security=true;TrustServerCertificate=true. The login needs VIEW SERVER STATE (the Database tab shows the one-line grant). The service runs as LocalSystem: for a local SQL Server it signs in as NT AUTHORITY\SYSTEM, for a remote one as the computer account (DOMAIN\SERVERNAME$)." />
-                <Grid Margin="0,4,0,0">
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="200" />
-                        <ColumnDefinition Width="*" />
-                    </Grid.ColumnDefinitions>
-                    <TextBlock Text="Slow query: longer than (seconds)" Style="{StaticResource Label}" />
-                    <TextBox x:Name="SlowThreshold" Grid.Column="1" Width="80" HorizontalAlignment="Left" />
-                </Grid>
-            </StackPanel>
-        </GroupBox>
-
-        <GroupBox Header="Tracing" Padding="8" Margin="0,10,0,0">
-            <StackPanel>
-                <CheckBox x:Name="KernelTracing" Content="Per-process disk and network bytes (kernel ETW)" />
-                <CheckBox x:Name="ResponseTracing" Content="Live response times (IIS ETW log stream)" />
-            </StackPanel>
-        </GroupBox>
-
-        <TextBlock x:Name="Error" Foreground="#C42B1C" TextWrapping="Wrap" Margin="0,8,0,0" Visibility="Collapsed" />
-
-        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,14,0,0">
+    <DockPanel Margin="16">
+        <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,14,0,0">
             <Button Content="Save" IsDefault="True" MinWidth="80" Click="OnSave" />
             <Button Content="Cancel" IsCancel="True" MinWidth="80" />
         </StackPanel>
-    </StackPanel>
+
+        <TextBlock x:Name="Error" DockPanel.Dock="Bottom" Foreground="#C42B1C" TextWrapping="Wrap" Margin="0,8,0,0" Visibility="Collapsed" />
+
+        <!-- Scrolls when the window would be taller than the screen -->
+        <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+            <StackPanel>
+                <TextBlock x:Name="StandaloneNote" TextWrapping="Wrap" Margin="0,0,0,10" Foreground="#8A6D00" Visibility="Collapsed"
+                           Text="Standalone mode: these settings are saved to the same file the service uses, so they apply to it too once it is installed." />
+
+                <GroupBox Header="Sampling and history" Padding="8">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="200" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <Grid.RowDefinitions>
+                            <RowDefinition />
+                            <RowDefinition />
+                            <RowDefinition />
+                            <RowDefinition />
+                        </Grid.RowDefinitions>
+
+                        <TextBlock Text="Live update every" Style="{StaticResource Label}" />
+                        <ComboBox x:Name="SampleInterval" Grid.Column="1" Margin="0,4" DisplayMemberPath="Label" />
+
+                        <TextBlock Grid.Row="1" Text="History resolution" Style="{StaticResource Label}" />
+                        <ComboBox x:Name="HistoryInterval" Grid.Row="1" Grid.Column="1" Margin="0,4" DisplayMemberPath="Label" />
+
+                        <TextBlock Grid.Row="2" Text="Keep history for (days)" Style="{StaticResource Label}" />
+                        <TextBox x:Name="RetentionDays" Grid.Row="2" Grid.Column="1" Width="80" HorizontalAlignment="Left" />
+
+                        <TextBlock Grid.Row="3" Grid.Column="1" Style="{StaticResource Hint}"
+                                   Text="History stores one averaged row per app pool, site and the server per resolution step (plus maximums for CPU, connections and response time). 7 days at 10 seconds is roughly 60,000 rows per item." />
+                    </Grid>
+                </GroupBox>
+
+                <GroupBox Header="SQL Server connections" Padding="8" Margin="0,10,0,0">
+                    <StackPanel>
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="200" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Text="SQL Server ports" Style="{StaticResource Label}" />
+                            <TextBox x:Name="SqlPorts" Grid.Column="1" ToolTip="Comma-separated, for example 1433, 50123" />
+                        </Grid>
+                        <CheckBox x:Name="DetectLocalSql" Content="Also count connections to any port a local SQL Server (sqlservr.exe) listens on" />
+                        <TextBlock Style="{StaticResource Hint}"
+                                   Text="Connections are counted from the Windows TCP table: open connections from each app pool's processes to these ports." />
+
+                        <TextBlock Text="SQL Server activity: database load, sessions and slow queries per app pool (one connection string per line)" Margin="0,8,0,2" TextWrapping="Wrap" />
+                        <TextBox x:Name="SqlConnectionStrings" AcceptsReturn="True" Height="70" VerticalScrollBarVisibility="Auto"
+                                 FontFamily="Consolas" TextWrapping="NoWrap" HorizontalScrollBarVisibility="Auto" />
+                        <TextBlock Style="{StaticResource Hint}"
+                                   Text="Example: Server=.;Integrated Security=true;TrustServerCertificate=true. The login needs VIEW SERVER STATE (the Database tab shows the one-line grant). The service runs as LocalSystem: for a local SQL Server it signs in as NT AUTHORITY\SYSTEM, for a remote one as the computer account (DOMAIN\SERVERNAME$)." />
+                        <Grid Margin="0,4,0,0">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="200" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Text="Slow query: longer than (seconds)" Style="{StaticResource Label}" />
+                            <TextBox x:Name="SlowThreshold" Grid.Column="1" Width="80" HorizontalAlignment="Left" />
+                        </Grid>
+                    </StackPanel>
+                </GroupBox>
+
+                <GroupBox Header="Tracing" Padding="8" Margin="0,10,0,0">
+                    <StackPanel>
+                        <CheckBox x:Name="KernelTracing" Content="Per-process disk and network bytes (kernel ETW)" />
+                        <CheckBox x:Name="ResponseTracing" Content="Live response times (IIS ETW log stream)" />
+                    </StackPanel>
+                </GroupBox>
+
+                <GroupBox Header="IP and URL tracking" Padding="8" Margin="0,10,0,0">
+                    <StackPanel>
+                        <TextBlock Style="{StaticResource Hint}"
+                                   Text="For the ticked app pools, record which client IP addresses request which URLs, with method and status code. The IPs &amp; URLs tab shows them and can block an address in IIS. Needs Live response times." />
+                        <Border BorderBrush="#D5DCE4" BorderThickness="1" MaxHeight="150">
+                            <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                                <ItemsControl x:Name="TrackedPools" Margin="6,2">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <!-- A TextBlock, so an underscore in a pool name isn't taken as an access key -->
+                                            <CheckBox IsChecked="{Binding IsChecked}" Margin="0,3">
+                                                <TextBlock Text="{Binding Label}" />
+                                            </CheckBox>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </ScrollViewer>
+                        </Border>
+                        <TextBlock x:Name="NoPools" Style="{StaticResource Hint}" Margin="0,4,0,0" Visibility="Collapsed"
+                                   Text="No app pools found yet. They appear here once IIS Monitor has read the IIS configuration." />
+                        <Grid Margin="0,4,0,0">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="220" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Text="Keep recorded requests for (days)" Style="{StaticResource Label}" />
+                            <TextBox x:Name="RequestRetentionDays" Grid.Column="1" Width="80" HorizontalAlignment="Left" />
+                        </Grid>
+                        <TextBlock Style="{StaticResource Hint}"
+                                   Text="Each app pool's requests are stored per minute, client IP, URL and status code in requests.db. A pool serving 100 requests per second can take up to about 1 GB per day; quieter pools much less." />
+                    </StackPanel>
+                </GroupBox>
+            </StackPanel>
+        </ScrollViewer>
+    </DockPanel>
 </Window>

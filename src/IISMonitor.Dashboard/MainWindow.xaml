@@ -8,6 +8,15 @@
         WindowStartupLocation="CenterScreen">
     <Window.Resources>
         <BooleanToVisibilityConverter x:Key="BoolToVisibility" />
+        <!-- A cell that shows its whole text as a tooltip (long URLs) -->
+        <Style x:Key="LongTextCell" TargetType="TextBlock" BasedOn="{StaticResource TextCell}">
+            <Setter Property="ToolTip" Value="{Binding Text, RelativeSource={RelativeSource Self}}" />
+            <Style.Triggers>
+                <Trigger Property="Text" Value="">
+                    <Setter Property="ToolTip" Value="{x:Null}" />
+                </Trigger>
+            </Style.Triggers>
+        </Style>
     </Window.Resources>
 
     <DockPanel>
@@ -360,6 +369,180 @@
                         <TextBlock Grid.Row="4" Text="Selected query" FontWeight="SemiBold" Margin="0,6,0,2" />
                         <TextBox Grid.Row="5" Text="{Binding Database.Details, Mode=OneWay}" IsReadOnly="True" FontFamily="Consolas"
                                  TextWrapping="Wrap" VerticalScrollBarVisibility="Auto" />
+                    </Grid>
+                </Grid>
+            </TabItem>
+
+            <!-- IPs & URLs: which client IPs request which URLs, per tracked app pool, and IP blocking -->
+            <TabItem x:Name="TrafficTab" Header="IPs &amp; URLs" DataContext="{Binding Traffic}">
+                <Grid>
+                    <!-- Shown until an app pool is tracked -->
+                    <ScrollViewer VerticalScrollBarVisibility="Auto"
+                                  Visibility="{Binding ShowSetup, Converter={StaticResource BoolToVisibility}}">
+                        <StackPanel Margin="12" MaxWidth="900" HorizontalAlignment="Left">
+                            <TextBlock Text="See which IP addresses visit which URLs" FontSize="16" FontWeight="SemiBold" />
+                            <TextBlock TextWrapping="Wrap" Margin="0,8,0,0"
+                                       Text="For the app pools you choose, IIS Monitor records every request from the IIS log stream: the client IP address, the URL, the method and the status code, added up per minute. This tab then lists the IP addresses and what each one requested, and the URLs and who requested them and when. It can also block an address in IIS." />
+                            <TextBlock FontWeight="SemiBold" Margin="0,12,0,4" TextWrapping="Wrap"
+                                       Text="Tick the app pools to track in Settings, under IP and URL tracking. Live response times must be on too." />
+                            <TextBlock TextWrapping="Wrap" Margin="0,6,0,0" Foreground="{StaticResource MutedBrush}"
+                                       Text="Privacy: URLs are stored without their query strings. IP addresses count as personal data in some jurisdictions (for example under the GDPR), so keep them only as long as you need; requests are deleted after 3 days unless you change it." />
+                            <Button Content="Open settings…" Click="OnSettingsClick" HorizontalAlignment="Left" Margin="0,12,0,0" />
+                        </StackPanel>
+                    </ScrollViewer>
+
+                    <Grid Visibility="{Binding IsConfigured, Converter={StaticResource BoolToVisibility}}">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="3*" MinHeight="120" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="2*" MinHeight="130" />
+                            <RowDefinition Height="Auto" />
+                        </Grid.RowDefinitions>
+
+                        <DockPanel Margin="0,6">
+                            <StackPanel DockPanel.Dock="Left" Orientation="Horizontal">
+                                <TextBlock Text="App pool" VerticalAlignment="Center" />
+                                <ComboBox ItemsSource="{Binding Pools}" SelectedItem="{Binding SelectedPool}" MinWidth="170" />
+                                <ComboBox ItemsSource="{Binding Ranges}" SelectedItem="{Binding SelectedRange}" DisplayMemberPath="Label" />
+                                <ComboBox ItemsSource="{Binding Views}" SelectedItem="{Binding SelectedView}" DisplayMemberPath="Label" />
+                                <TextBlock Text="Filter" VerticalAlignment="Center" Margin="8,0,0,0" />
+                                <TextBox Text="{Binding Filter, UpdateSourceTrigger=PropertyChanged, Delay=400}" ToolTip="{Binding FilterHint}"
+                                         Width="180" Margin="4,0" Padding="3,2" VerticalContentAlignment="Center" />
+                                <Button Content="Refresh" Command="{Binding RefreshCommand}" />
+                                <Button Content="Block IP…" Command="{Binding BlockIpCommand}"
+                                        ToolTip="Make IIS refuse the selected IP address (403 Forbidden)." />
+                            </StackPanel>
+                            <TextBlock Text="{Binding StatusText}" ToolTip="{Binding StatusText}" Foreground="{StaticResource MutedBrush}"
+                                       VerticalAlignment="Center" Margin="8,0" TextTrimming="CharacterEllipsis" />
+                        </DockPanel>
+
+                        <!-- What the collector says the user should know -->
+                        <Border Grid.Row="1" Background="{StaticResource WarningBrush}" BorderBrush="{StaticResource WarningBorderBrush}"
+                                BorderThickness="1" Padding="8,4" Margin="0,0,0,6"
+                                Visibility="{Binding ShowWarnings, Converter={StaticResource BoolToVisibility}}">
+                            <DockPanel>
+                                <Button DockPanel.Dock="Right" Content="Turn on client IP logging" Command="{Binding EnableLoggingCommand}" VerticalAlignment="Center"
+                                        Visibility="{Binding LoggingFieldsMissing, Converter={StaticResource BoolToVisibility}}"
+                                        ToolTip="Make IIS send the client IP, method and substatus of each request to ETW (changes applicationHost.config)." />
+                                <ItemsControl ItemsSource="{Binding Warnings}" VerticalAlignment="Center">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <TextBlock Text="{Binding}" TextWrapping="Wrap" Margin="0,1" />
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </DockPanel>
+                        </Border>
+
+                        <!-- One row per client IP or per URL; the window shows the columns of the chosen view -->
+                        <DataGrid Grid.Row="2" ItemsSource="{Binding Summaries}" SelectedItem="{Binding SelectedSummary}">
+                            <DataGrid.Resources>
+                                <ContextMenu x:Key="BlockSummaryMenu">
+                                    <MenuItem Header="Block this IP…"
+                                              Command="{Binding PlacementTarget.Tag.BlockIpCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}"
+                                              CommandParameter="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource AncestorType=ContextMenu}}" />
+                                </ContextMenu>
+                            </DataGrid.Resources>
+                            <DataGrid.RowStyle>
+                                <Style TargetType="DataGridRow">
+                                    <!-- The menu is outside the grid's tree: it reaches the view model through the row's Tag -->
+                                    <Setter Property="Tag" Value="{Binding DataContext, RelativeSource={RelativeSource AncestorType=DataGrid}}" />
+                                    <Setter Property="ContextMenu" Value="{StaticResource BlockSummaryMenu}" />
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding ClientIp}" Value="{x:Null}">
+                                            <Setter Property="ContextMenu" Value="{x:Null}" />
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </DataGrid.RowStyle>
+                            <DataGrid.Columns>
+                                <DataGridTextColumn x:Name="TrafficIpColumn" Header="IP address" Binding="{Binding Key}" Width="170" ElementStyle="{StaticResource TextCell}" />
+                                <DataGridTextColumn x:Name="TrafficUrlColumn" Header="URL" Binding="{Binding Key}" Width="*" MinWidth="250" ElementStyle="{StaticResource LongTextCell}" />
+                                <DataGridTextColumn Header="Requests" Binding="{Binding HitsText}" SortMemberPath="Hits" Width="85" ElementStyle="{StaticResource NumberCell}" />
+                                <DataGridTextColumn x:Name="TrafficUrlsColumn" Header="URLs" Binding="{Binding DistinctText}" SortMemberPath="Distinct" Width="65" ElementStyle="{StaticResource NumberCell}" />
+                                <DataGridTextColumn x:Name="TrafficIpsColumn" Header="IP addresses" Binding="{Binding DistinctText}" SortMemberPath="Distinct" Width="90" ElementStyle="{StaticResource NumberCell}" />
+                                <DataGridTextColumn Header="2xx" Binding="{Binding Status2xxText}" SortMemberPath="Status2xx" Width="70" ElementStyle="{StaticResource NumberCell}" />
+                                <DataGridTextColumn Header="3xx" Binding="{Binding Status3xxText}" SortMemberPath="Status3xx" Width="70" ElementStyle="{StaticResource NumberCell}" />
+                                <DataGridTextColumn Header="4xx" Binding="{Binding Status4xxText}" SortMemberPath="Status4xx" Width="70" ElementStyle="{StaticResource NumberCell}" />
+                                <DataGridTextColumn Header="5xx" Binding="{Binding Status5xxText}" SortMemberPath="Status5xx" Width="70" ElementStyle="{StaticResource NumberCell}" />
+                                <DataGridTextColumn Header="Avg time" Binding="{Binding AverageText}" SortMemberPath="AverageTimeMs" Width="75" ElementStyle="{StaticResource NumberCell}" />
+                                <DataGridTextColumn Header="First seen" Binding="{Binding FirstText}" SortMemberPath="FirstUnixMs" Width="140" ElementStyle="{StaticResource TextCell}" />
+                                <DataGridTextColumn Header="Last seen" Binding="{Binding LastText}" SortMemberPath="LastUnixMs" Width="140" ElementStyle="{StaticResource TextCell}" />
+                                <DataGridTextColumn x:Name="TrafficBlockedColumn" Header="Blocked" Binding="{Binding Blocked}" Width="*" MinWidth="80">
+                                    <DataGridTextColumn.ElementStyle>
+                                        <Style TargetType="TextBlock" BasedOn="{StaticResource LongTextCell}">
+                                            <Setter Property="Foreground" Value="{StaticResource BadBrush}" />
+                                        </Style>
+                                    </DataGridTextColumn.ElementStyle>
+                                </DataGridTextColumn>
+                            </DataGrid.Columns>
+                        </DataGrid>
+
+                        <GridSplitter Grid.Row="3" Height="6" HorizontalAlignment="Stretch" Background="Transparent" />
+
+                        <!-- What the selected IP requested, or who requested the selected URL -->
+                        <DockPanel Grid.Row="4">
+                            <DockPanel DockPanel.Dock="Top" Margin="0,0,0,4">
+                                <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
+                                    <RadioButton Content="Each minute" IsChecked="{Binding IsEachMinute}" GroupName="TrafficDetailMode" Margin="0,0,12,0"
+                                                 ToolTip="One row per minute in which the requests happened." />
+                                    <RadioButton Content="Totals" IsChecked="{Binding IsTotals}" GroupName="TrafficDetailMode"
+                                                 ToolTip="One row per URL or IP address, method and status over the whole period." />
+                                </StackPanel>
+                                <TextBlock VerticalAlignment="Center" TextTrimming="CharacterEllipsis">
+                                    <Run Text="{Binding DetailHeader, Mode=OneWay}" FontWeight="SemiBold" /><Run Text="   " /><Run Text="{Binding DetailStatus, Mode=OneWay}" Foreground="{StaticResource MutedBrush}" />
+                                </TextBlock>
+                            </DockPanel>
+                            <DataGrid ItemsSource="{Binding Details}" SelectedItem="{Binding SelectedDetail}">
+                                <DataGrid.Resources>
+                                    <ContextMenu x:Key="BlockDetailMenu">
+                                        <MenuItem Header="Block this IP…"
+                                                  Command="{Binding PlacementTarget.Tag.BlockIpCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}"
+                                                  CommandParameter="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource AncestorType=ContextMenu}}" />
+                                    </ContextMenu>
+                                </DataGrid.Resources>
+                                <DataGrid.RowStyle>
+                                    <Style TargetType="DataGridRow">
+                                        <Setter Property="Tag" Value="{Binding DataContext, RelativeSource={RelativeSource AncestorType=DataGrid}}" />
+                                        <Setter Property="ContextMenu" Value="{StaticResource BlockDetailMenu}" />
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding IsError}" Value="True">
+                                                <Setter Property="Foreground" Value="{StaticResource BadBrush}" />
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </DataGrid.RowStyle>
+                                <DataGrid.Columns>
+                                    <DataGridTextColumn x:Name="TrafficTimeColumn" Header="Time" Binding="{Binding TimeText}" SortMemberPath="MinuteUnixMs" Width="120" ElementStyle="{StaticResource TextCell}" />
+                                    <DataGridTextColumn x:Name="TrafficDetailIpColumn" Header="IP address" Binding="{Binding ClientIp}" Width="170" ElementStyle="{StaticResource TextCell}" />
+                                    <DataGridTextColumn x:Name="TrafficDetailUrlColumn" Header="URL" Binding="{Binding Url}" Width="*" MinWidth="250" ElementStyle="{StaticResource LongTextCell}" />
+                                    <DataGridTextColumn Header="Method" Binding="{Binding Method}" Width="70" ElementStyle="{StaticResource TextCell}" />
+                                    <DataGridTextColumn Header="Status" Binding="{Binding StatusText}" SortMemberPath="StatusSort" Width="65" ElementStyle="{StaticResource NumberCell}" />
+                                    <DataGridTextColumn Header="Requests" Binding="{Binding HitsText}" SortMemberPath="Hits" Width="85" ElementStyle="{StaticResource NumberCell}" />
+                                    <DataGridTextColumn Header="Avg time" Binding="{Binding AverageText}" SortMemberPath="AverageTimeMs" Width="75" ElementStyle="{StaticResource NumberCell}" />
+                                    <DataGridTextColumn Header="First" Binding="{Binding FirstText}" SortMemberPath="FirstUnixMs" Width="140" ElementStyle="{StaticResource TextCell}" />
+                                    <DataGridTextColumn Header="Last" Binding="{Binding LastText}" SortMemberPath="LastUnixMs" Width="140" ElementStyle="{StaticResource TextCell}" />
+                                </DataGrid.Columns>
+                            </DataGrid>
+                        </DockPanel>
+
+                        <!-- Addresses IIS refuses (IP and Domain Restrictions), wherever they were added -->
+                        <Expander Grid.Row="5" Header="{Binding BlockedHeader}" Margin="0,6,0,0">
+                            <DockPanel Margin="0,4,0,0">
+                                <Button DockPanel.Dock="Right" Content="Unblock" Command="{Binding UnblockCommand}" VerticalAlignment="Top"
+                                        ToolTip="Remove the selected entry, so IIS accepts requests from that address again." />
+                                <TextBlock DockPanel.Dock="Bottom" Text="{Binding BlockedStatus}" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" Margin="0,4,0,0" />
+                                <DataGrid ItemsSource="{Binding Blocked}" SelectedItem="{Binding SelectedBlocked}" MaxHeight="150">
+                                    <DataGrid.Columns>
+                                        <DataGridTextColumn Header="IP address" Binding="{Binding IpAddress}" Width="170" ElementStyle="{StaticResource TextCell}" />
+                                        <DataGridTextColumn Header="Mask" Binding="{Binding Mask}" Width="130" ElementStyle="{StaticResource TextCell}" />
+                                        <DataGridTextColumn Header="Applies to" Binding="{Binding AppliesTo}" Width="*" ElementStyle="{StaticResource LongTextCell}" />
+                                    </DataGrid.Columns>
+                                </DataGrid>
+                            </DockPanel>
+                        </Expander>
                     </Grid>
                 </Grid>
             </TabItem>
