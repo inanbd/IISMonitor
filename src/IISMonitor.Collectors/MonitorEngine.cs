@@ -44,7 +44,10 @@ public sealed class MonitorEngine : IMonitorHost, IAsyncDisposable
     private readonly ProcessSampler _sampler = new();
     private readonly ResponseTimeAggregator _responses = new();
     private readonly HistoryAggregator _historyAggregator = new();
+    private readonly RequestLogRecorder _requestLog;
     private readonly CancellationTokenSource _cts = new();
+    // Serializes the commands that change applicationHost.config, so one doesn't overwrite another's change.
+    private readonly object _iisConfigWriteGate = new();
     private readonly bool _elevated;
 
     private MonitorSettings _settings;
@@ -61,12 +64,14 @@ public sealed class MonitorEngine : IMonitorHost, IAsyncDisposable
     private IisTopology? _topology;
     private PeriodicTimer? _timer;
     private Task? _loop;
+    private string? _blockedListError;
 
     public MonitorEngine(MonitorEngineOptions? options = null)
     {
         _options = options ?? new MonitorEngineOptions();
         _settingsStore = new SettingsStore(Path.Combine(_options.DataDirectory, "settings.json"));
         _history = new HistoryStore(Path.Combine(_options.DataDirectory, "history.db"));
+        _requestLog = new RequestLogRecorder(new RequestLogStore(Path.Combine(_options.DataDirectory, "requests.db")), Log);
         _settings = _settingsStore.Load();
         _elevated = SecureDataDirectory.IsElevated();
     }
@@ -109,6 +114,10 @@ public sealed class MonitorEngine : IMonitorHost, IAsyncDisposable
             _historyError = e.Message;
             Log("Could not open the history database.", e);
         }
+
+        // Opens requests.db (a failure shows on the "IP and URL tracking" health row) and starts its write loop.
+        _requestLog.RetentionDays = _settings.RequestLogRetentionDays;
+        _requestLog.Start();
 
         lock (_gate)
             ApplyCollectors(_settings, previous: null);
@@ -275,6 +284,17 @@ public sealed class MonitorEngine : IMonitorHost, IAsyncDisposable
                 : Ok("Response times (IIS ETW log)", "Off in settings."));
         }
 
+        // Client IPs and URLs of the tracked app pools, recorded from the same log stream.
+        var tracking = settings.RequestTrackingPools.Count > 0;
+        health.Add(RequestTrackingStatus.Health(
+            settings,
+            topologyNow,
+            _iisLog is { Running: true },
+            _requestLog.Error,
+            _requestLog.Aggregator.RecordedRequests,
+            _requestLog.Aggregator.DroppedRequests,
+            tracking ? _requestLog.Store.SizeBytes() : 0));
+
         SystemSample? system = null;
         try
         {
@@ -407,6 +427,9 @@ public sealed class MonitorEngine : IMonitorHost, IAsyncDisposable
                     TimeSpan.FromSeconds(settings.SqlActivityIntervalSeconds),
                     settings.SlowQueryThresholdSeconds * 1000);
         }
+
+        _iisLog?.UpdateTrackedPools(settings.RequestTrackingPools);
+        _requestLog.RetentionDays = settings.RequestLogRetentionDays;
     }
 
     /// <summary>Restarts an ETW session that failed to start or stopped, at most once a minute.</summary>
@@ -454,11 +477,12 @@ public sealed class MonitorEngine : IMonitorHost, IAsyncDisposable
     private void StartIisLog()
     {
         _iisLogAttemptUtc = DateTime.UtcNow;
-        var monitor = new IisLogMonitor(_options.EtwSessionPrefix + "-IISLog", _responses);
+        var monitor = new IisLogMonitor(_options.EtwSessionPrefix + "-IISLog", _responses, _requestLog.Aggregator);
         try
         {
             if (_topology is { } topology)
                 monitor.UpdateSites(topology.Sites);
+            monitor.UpdateTrackedPools(_settings.RequestTrackingPools);
             monitor.Start();
             _iisLog = monitor;
             _iisLogError = null;
@@ -511,7 +535,9 @@ public sealed class MonitorEngine : IMonitorHost, IAsyncDisposable
         {
             try
             {
-                var message = IisLoggingConfig.EnableEtwLogging();
+                string message;
+                lock (_iisConfigWriteGate)
+                    message = IisLoggingConfig.EnableEtwLogging();
                 lock (_gate)
                 {
                     try
@@ -534,18 +560,110 @@ public sealed class MonitorEngine : IMonitorHost, IAsyncDisposable
             }
         }, cancellationToken);
 
-    // Stage 1 stubs so the protocol compiles; replaced by the real implementation.
-    public Task<RequestLogReport> QueryRequestLogAsync(RequestLogQuery query, CancellationToken cancellationToken) =>
-        Task.FromResult(new RequestLogReport { View = query.View });
+    public async Task<RequestLogReport> QueryRequestLogAsync(RequestLogQuery query, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(query);
+
+        // Writes what is still pending first, so the report is up to the second.
+        var report = await _requestLog.QueryAsync(query, cancellationToken).ConfigureAwait(false);
+
+        IisTopology? topology;
+        bool iisLogRunning;
+        lock (_gate)
+        {
+            topology = _topology;
+            iisLogRunning = _iisLog is { Running: true };
+        }
+
+        RequestTrackingStatus.AddWarnings(
+            report, query.AppPool, Settings, topology, iisLogRunning, _requestLog.Error, _requestLog.Aggregator.DroppedRequests);
+        report.DatabaseBytes = _requestLog.Store.SizeBytes();
+        return report;
+    }
 
     public Task<List<BlockedIp>> ListBlockedIpsAsync(CancellationToken cancellationToken) =>
-        Task.FromResult(new List<BlockedIp>());
+        Task.Run(() =>
+        {
+            try
+            {
+                var blocked = IpRestrictionConfig.ListBlocked();
+                Volatile.Write(ref _blockedListError, null);
+                return blocked;
+            }
+            catch (Exception e)
+            {
+                // The tab asks every time it refreshes; log each distinct failure once.
+                var message = IpRestrictionConfig.ErrorMessage(e);
+                if (Interlocked.Exchange(ref _blockedListError, message) != message)
+                    Log("Reading blocked IP addresses from IIS failed.", e);
+                throw new InvalidOperationException(message, e);
+            }
+        }, cancellationToken);
 
     public Task<CommandResult> BlockIpAsync(IpBlockRequest request, CancellationToken cancellationToken) =>
-        Task.FromResult(CommandResult.Fail("Not available yet."));
+        Task.Run(() =>
+        {
+            if (!IpAddressRules.TryNormalizeForBlocking(request?.IpAddress, out var address, out var error))
+                return CommandResult.Fail(error);
+
+            try
+            {
+                List<string> locations = [""];
+                var pool = request!.AppPool?.Trim();
+                if (!string.IsNullOrEmpty(pool))
+                {
+                    locations = IpAddressRules.LocationsForPool(CurrentTopology(), pool);
+                    if (locations.Count == 0)
+                        return CommandResult.Fail($"App pool {pool} runs no sites or applications in IIS, so there is nothing to block {address} on.");
+                }
+
+                string message;
+                lock (_iisConfigWriteGate)
+                    message = IpRestrictionConfig.Block(address, locations);
+                Log(message);
+                return CommandResult.Ok(message);
+            }
+            catch (Exception e)
+            {
+                Log($"Blocking {address} failed.", e);
+                return CommandResult.Fail(IpRestrictionConfig.ErrorMessage(e));
+            }
+        }, cancellationToken);
 
     public Task<CommandResult> UnblockIpAsync(IpBlockRequest request, CancellationToken cancellationToken) =>
-        Task.FromResult(CommandResult.Fail("Not available yet."));
+        Task.Run(() =>
+        {
+            // Any deny entry can be removed, also one this app wouldn't add (say, a loopback address added by hand).
+            var address = request?.IpAddress?.Trim() ?? "";
+            if (!IpRestrictionConfig.TryParseAddress(address, out _))
+                return CommandResult.Fail(address.Length == 0 ? "Enter an IP address." : $"'{address}' is not an IP address.");
+
+            try
+            {
+                string message;
+                lock (_iisConfigWriteGate)
+                    message = IpRestrictionConfig.Unblock(address, request!.Location ?? "");
+                Log(message);
+                return CommandResult.Ok(message);
+            }
+            catch (Exception e)
+            {
+                Log($"Unblocking {address} failed.", e);
+                return CommandResult.Fail(IpRestrictionConfig.ErrorMessage(e));
+            }
+        }, cancellationToken);
+
+    /// <summary>The IIS topology of the last tick, or read now when there is none (without holding the collection lock while reading).</summary>
+    private IisTopology CurrentTopology()
+    {
+        lock (_gate)
+        {
+            if (_topology is { } topology)
+                return topology;
+        }
+
+        return new IisConfigReader().Read();
+    }
 
     private void Raise<T>(EventHandler<T>? handler, T value)
     {
@@ -585,6 +703,9 @@ public sealed class MonitorEngine : IMonitorHost, IAsyncDisposable
             StopIisLog();
             _sampler.Dispose();
         }
+
+        // After the IIS log session has stopped, so the final write includes its last requests.
+        await _requestLog.DisposeAsync().ConfigureAwait(false);
 
         if (_sql is { } sql)
             await sql.DisposeAsync().ConfigureAwait(false);

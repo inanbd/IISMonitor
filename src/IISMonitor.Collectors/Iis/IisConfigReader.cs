@@ -11,7 +11,7 @@ namespace IISMonitor.Collectors.Iis;
 internal sealed class IisConfigReader
 {
     private static readonly TimeSpan RefreshInterval = TimeSpan.FromSeconds(5);
-    private static readonly string ConfigPath = Environment.ExpandEnvironmentVariables(@"%windir%\System32\inetsrv\config\applicationHost.config");
+    internal static readonly string ConfigPath = Environment.ExpandEnvironmentVariables(@"%windir%\System32\inetsrv\config\applicationHost.config");
 
     private IisTopology? _cached;
     private DateTime _readAtUtc;
@@ -78,6 +78,7 @@ internal sealed class IisConfigReader
                         : defaultPool))
                     .ToList(),
                 EtwLoggingEnabled = !centralBinary && IisLoggingConfig.IsEtwReady(site, siteDefaultsLog, centralW3C),
+                RequestFieldsLogged = !centralBinary && IisLoggingConfig.LogsRequestFields(site, siteDefaultsLog, centralW3C),
             });
         }
 
