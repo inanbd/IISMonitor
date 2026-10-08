@@ -1,6 +1,7 @@
 using IISMonitor.Core.History;
 using IISMonitor.Core.Metrics;
 using IISMonitor.Core.Models;
+using IISMonitor.Core.RequestLog;
 using IISMonitor.Core.Settings;
 
 namespace IISMonitor.Core.Protocol;
@@ -59,6 +60,18 @@ public sealed class InProcessBackend : IMonitorBackend
 
     public Task<CommandResult> EnableIisEtwLoggingAsync(CancellationToken cancellationToken = default) =>
         _host.EnableIisEtwLoggingAsync(cancellationToken);
+
+    public Task<RequestLogReport> QueryRequestLogAsync(RequestLogQuery query, CancellationToken cancellationToken = default) =>
+        _host.QueryRequestLogAsync(query, cancellationToken);
+
+    public Task<List<BlockedIp>> ListBlockedIpsAsync(CancellationToken cancellationToken = default) =>
+        _host.ListBlockedIpsAsync(cancellationToken);
+
+    public Task<CommandResult> BlockIpAsync(IpBlockRequest request, CancellationToken cancellationToken = default) =>
+        _host.BlockIpAsync(request, cancellationToken);
+
+    public Task<CommandResult> UnblockIpAsync(IpBlockRequest request, CancellationToken cancellationToken = default) =>
+        _host.UnblockIpAsync(request, cancellationToken);
 
     private void OnSnapshot(object? sender, MonitorSnapshot snapshot) => SnapshotReceived?.Invoke(this, snapshot);
 

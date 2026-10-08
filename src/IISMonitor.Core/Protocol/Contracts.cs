@@ -1,6 +1,7 @@
 using IISMonitor.Core.History;
 using IISMonitor.Core.Metrics;
 using IISMonitor.Core.Models;
+using IISMonitor.Core.RequestLog;
 using IISMonitor.Core.Settings;
 
 namespace IISMonitor.Core.Protocol;
@@ -36,6 +37,18 @@ public interface IMonitorHost
 
     /// <summary>Turns on IIS's ETW log target (and the log fields response-time tracking needs) for all sites.</summary>
     Task<CommandResult> EnableIisEtwLoggingAsync(CancellationToken cancellationToken);
+
+    /// <summary>Tracked requests of one app pool: client IPs, URLs, or the details of one of them.</summary>
+    Task<RequestLogReport> QueryRequestLogAsync(RequestLogQuery query, CancellationToken cancellationToken);
+
+    /// <summary>IP addresses IIS currently refuses (IP and Domain Restrictions).</summary>
+    Task<List<BlockedIp>> ListBlockedIpsAsync(CancellationToken cancellationToken);
+
+    /// <summary>Makes IIS refuse an IP address, for one app pool's applications or the whole server.</summary>
+    Task<CommandResult> BlockIpAsync(IpBlockRequest request, CancellationToken cancellationToken);
+
+    /// <summary>Removes a block added by <see cref="BlockIpAsync"/> (or by hand) at one location.</summary>
+    Task<CommandResult> UnblockIpAsync(IpBlockRequest request, CancellationToken cancellationToken);
 }
 
 /// <summary>The dashboard's view of a collector, local or over the named pipe.</summary>
@@ -71,4 +84,16 @@ public interface IMonitorBackend : IAsyncDisposable
     Task<SlowQueryReport> QuerySlowQueriesAsync(SlowQueryRequest request, CancellationToken cancellationToken = default);
 
     Task<CommandResult> EnableIisEtwLoggingAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>Tracked requests of one app pool: client IPs, URLs, or the details of one of them.</summary>
+    Task<RequestLogReport> QueryRequestLogAsync(RequestLogQuery query, CancellationToken cancellationToken = default);
+
+    /// <summary>IP addresses IIS currently refuses (IP and Domain Restrictions).</summary>
+    Task<List<BlockedIp>> ListBlockedIpsAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>Makes IIS refuse an IP address, for one app pool's applications or the whole server.</summary>
+    Task<CommandResult> BlockIpAsync(IpBlockRequest request, CancellationToken cancellationToken = default);
+
+    /// <summary>Removes a block added by <see cref="BlockIpAsync"/> (or by hand) at one location.</summary>
+    Task<CommandResult> UnblockIpAsync(IpBlockRequest request, CancellationToken cancellationToken = default);
 }

@@ -9,6 +9,7 @@ using IISMonitor.Core.History;
 using IISMonitor.Core.Metrics;
 using IISMonitor.Core.Models;
 using IISMonitor.Core.Protocol;
+using IISMonitor.Core.RequestLog;
 using IISMonitor.Core.Settings;
 
 namespace IISMonitor.Collectors;
@@ -532,6 +533,19 @@ public sealed class MonitorEngine : IMonitorHost, IAsyncDisposable
                 return CommandResult.Fail(e.Message);
             }
         }, cancellationToken);
+
+    // Stage 1 stubs so the protocol compiles; replaced by the real implementation.
+    public Task<RequestLogReport> QueryRequestLogAsync(RequestLogQuery query, CancellationToken cancellationToken) =>
+        Task.FromResult(new RequestLogReport { View = query.View });
+
+    public Task<List<BlockedIp>> ListBlockedIpsAsync(CancellationToken cancellationToken) =>
+        Task.FromResult(new List<BlockedIp>());
+
+    public Task<CommandResult> BlockIpAsync(IpBlockRequest request, CancellationToken cancellationToken) =>
+        Task.FromResult(CommandResult.Fail("Not available yet."));
+
+    public Task<CommandResult> UnblockIpAsync(IpBlockRequest request, CancellationToken cancellationToken) =>
+        Task.FromResult(CommandResult.Fail("Not available yet."));
 
     private void Raise<T>(EventHandler<T>? handler, T value)
     {

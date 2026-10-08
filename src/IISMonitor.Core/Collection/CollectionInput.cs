@@ -59,6 +59,9 @@ public sealed class SiteInfo
     public List<ApplicationInfo> Applications { get; init; } = [];
     public bool EtwLoggingEnabled { get; init; }
 
+    /// <summary>IIS also sends the client IP, method and substatus to ETW (needed for IP and URL tracking).</summary>
+    public bool RequestFieldsLogged { get; init; }
+
     public string RootAppPool =>
         Applications.FirstOrDefault(a => a.Path == "/")?.AppPool ?? Applications.FirstOrDefault()?.AppPool ?? "";
 }

@@ -10,6 +10,7 @@ public sealed class MonitorSettings
     public const int MinHistoryIntervalSeconds = 5;
     public const int MaxHistoryIntervalSeconds = 300;
     public const int MaxRetentionDays = 31;
+    public const int MaxRequestLogRetentionDays = 31;
 
     /// <summary>How often live data is collected and pushed to the dashboard.</summary>
     public int SampleIntervalMs { get; set; } = 1000;
@@ -48,6 +49,12 @@ public sealed class MonitorSettings
     /// <summary>Listen to IIS's ETW log stream for live response times.</summary>
     public bool EnableResponseTimeTracing { get; set; } = true;
 
+    /// <summary>App pools whose requests are recorded per client IP and URL (the IPs &amp; URLs tab).</summary>
+    public List<string> RequestTrackingPools { get; set; } = [];
+
+    /// <summary>How long recorded requests are kept, in days.</summary>
+    public int RequestLogRetentionDays { get; set; } = 3;
+
     public MonitorSettings Normalize()
     {
         var copy = Clone();
@@ -66,6 +73,13 @@ public sealed class MonitorSettings
         copy.SlowQueryThresholdSeconds = double.IsFinite(copy.SlowQueryThresholdSeconds)
             ? Math.Clamp(copy.SlowQueryThresholdSeconds, 0.5, 3600)
             : 2;
+        copy.RequestTrackingPools = (copy.RequestTrackingPools ?? [])
+            .Select(p => p?.Trim() ?? "")
+            .Where(p => p.Length > 0)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Order(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        copy.RequestLogRetentionDays = Math.Clamp(copy.RequestLogRetentionDays, 1, MaxRequestLogRetentionDays);
         return copy;
     }
 

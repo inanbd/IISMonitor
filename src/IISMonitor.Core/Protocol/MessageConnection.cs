@@ -7,7 +7,7 @@ namespace IISMonitor.Core.Protocol;
 public static class PipeProtocol
 {
     public const string PipeName = "IISMonitor.v1";
-    public const int Version = 1;
+    public const int Version = 2;
 
     public const string Hello = "hello";
     public const string Snapshot = "snapshot";
@@ -20,6 +20,10 @@ public static class PipeProtocol
     public const string ListEntities = "listEntities";
     public const string QuerySlowQueries = "querySlowQueries";
     public const string EnableIisEtwLogging = "enableIisEtwLogging";
+    public const string QueryRequestLog = "queryRequestLog";
+    public const string ListBlockedIps = "listBlockedIps";
+    public const string BlockIp = "blockIp";
+    public const string UnblockIp = "unblockIp";
 
     public static readonly JsonSerializerOptions Json = new()
     {

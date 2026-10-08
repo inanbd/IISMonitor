@@ -4,6 +4,7 @@ using System.Text.Json;
 using IISMonitor.Core.History;
 using IISMonitor.Core.Metrics;
 using IISMonitor.Core.Models;
+using IISMonitor.Core.RequestLog;
 using IISMonitor.Core.Settings;
 
 namespace IISMonitor.Core.Protocol;
@@ -109,6 +110,18 @@ public sealed class PipeClientBackend : IMonitorBackend
 
     public Task<CommandResult> EnableIisEtwLoggingAsync(CancellationToken cancellationToken = default) =>
         RequestAsync<CommandResult>(PipeProtocol.EnableIisEtwLogging, new { }, cancellationToken);
+
+    public Task<RequestLogReport> QueryRequestLogAsync(RequestLogQuery query, CancellationToken cancellationToken = default) =>
+        RequestAsync<RequestLogReport>(PipeProtocol.QueryRequestLog, query, cancellationToken);
+
+    public Task<List<BlockedIp>> ListBlockedIpsAsync(CancellationToken cancellationToken = default) =>
+        RequestAsync<List<BlockedIp>>(PipeProtocol.ListBlockedIps, new { }, cancellationToken);
+
+    public Task<CommandResult> BlockIpAsync(IpBlockRequest request, CancellationToken cancellationToken = default) =>
+        RequestAsync<CommandResult>(PipeProtocol.BlockIp, request, cancellationToken);
+
+    public Task<CommandResult> UnblockIpAsync(IpBlockRequest request, CancellationToken cancellationToken = default) =>
+        RequestAsync<CommandResult>(PipeProtocol.UnblockIp, request, cancellationToken);
 
     private async Task<T> RequestAsync<T>(string type, object payload, CancellationToken cancellationToken)
     {

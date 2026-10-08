@@ -25,6 +25,49 @@ public class SettingsAndFormattingTests
     }
 
     [Fact]
+    public void Normalize_cleans_request_tracking_settings()
+    {
+        var defaults = new MonitorSettings().Normalize();
+        Assert.Empty(defaults.RequestTrackingPools);
+        Assert.Equal(3, defaults.RequestLogRetentionDays);
+
+        var settings = new MonitorSettings
+        {
+            RequestTrackingPools = ["  ShopPool ", "", "shoppool", "ApiPool", null!, "   "],
+            RequestLogRetentionDays = 0,
+        }.Normalize();
+        Assert.Equal(["ApiPool", "ShopPool"], settings.RequestTrackingPools);
+        Assert.Equal(1, settings.RequestLogRetentionDays);
+
+        var clamped = new MonitorSettings { RequestTrackingPools = null!, RequestLogRetentionDays = 400 }.Normalize();
+        Assert.Empty(clamped.RequestTrackingPools);
+        Assert.Equal(MonitorSettings.MaxRequestLogRetentionDays, clamped.RequestLogRetentionDays);
+    }
+
+    [Fact]
+    public void Settings_saved_before_request_tracking_load_with_its_defaults()
+    {
+        var path = Path.Combine(Path.GetTempPath(), "iismonitor-settings-" + Guid.NewGuid().ToString("N") + ".json");
+        try
+        {
+            File.WriteAllText(path, """{ "sampleIntervalMs": 2000, "enableResponseTimeTracing": true }""");
+            var loaded = new SettingsStore(path).Load();
+            Assert.Equal(2000, loaded.SampleIntervalMs);
+            Assert.Empty(loaded.RequestTrackingPools);
+            Assert.Equal(3, loaded.RequestLogRetentionDays);
+
+            new SettingsStore(path).Save(new MonitorSettings { RequestTrackingPools = ["ShopPool"], RequestLogRetentionDays = 7 });
+            var saved = new SettingsStore(path).Load();
+            Assert.Equal(["ShopPool"], saved.RequestTrackingPools);
+            Assert.Equal(7, saved.RequestLogRetentionDays);
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
+    [Fact]
     public void History_interval_is_never_finer_than_the_sample_interval()
     {
         var settings = new MonitorSettings { SampleIntervalMs = 30_000, HistoryIntervalSeconds = 10 }.Normalize();

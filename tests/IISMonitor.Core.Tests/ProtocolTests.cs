@@ -3,6 +3,7 @@ using IISMonitor.Core.History;
 using IISMonitor.Core.Metrics;
 using IISMonitor.Core.Models;
 using IISMonitor.Core.Protocol;
+using IISMonitor.Core.RequestLog;
 using IISMonitor.Core.Settings;
 
 namespace IISMonitor.Core.Tests;
@@ -48,6 +49,52 @@ public class ProtocolTests
 
         public Task<CommandResult> EnableIisEtwLoggingAsync(CancellationToken cancellationToken) =>
             Task.FromResult(CommandResult.Ok("done"));
+
+        public System.Collections.Concurrent.ConcurrentQueue<IpBlockRequest> Unblocked { get; } = new();
+
+        public Task<RequestLogReport> QueryRequestLogAsync(RequestLogQuery query, CancellationToken cancellationToken) =>
+            Task.FromResult(new RequestLogReport
+            {
+                View = query.View,
+                Details =
+                [
+                    new RequestLogDetailRow
+                    {
+                        MinuteUnixMs = HistoryStore.ToUnixMs(query.FromUtc),
+                        ClientIp = query.Key ?? "",
+                        Url = query.AppPool + "/login",
+                        Method = "POST",
+                        Status = 401,
+                        SubStatus = 1,
+                        Hits = query.PerMinute ? 7 : 70,
+                        AverageTimeMs = 12.5,
+                    },
+                ],
+                TotalRows = 1,
+                TotalHits = 7,
+                Truncated = true,
+                Warnings = ["Tracking is off for this app pool."],
+                LoggingFieldsMissing = true,
+                DatabaseBytes = 4096,
+            });
+
+        public Task<List<BlockedIp>> ListBlockedIpsAsync(CancellationToken cancellationToken) =>
+            Task.FromResult(new List<BlockedIp>
+            {
+                new() { IpAddress = "203.0.113.7", Location = "Shop" },
+                new() { IpAddress = "198.51.100.0", SubnetMask = "255.255.255.0" },
+            });
+
+        public Task<CommandResult> BlockIpAsync(IpBlockRequest request, CancellationToken cancellationToken) =>
+            Task.FromResult(request.AppPool == "ShopPool"
+                ? CommandResult.Ok($"Blocked {request.IpAddress} for {request.AppPool}.")
+                : CommandResult.Fail($"No app pool '{request.AppPool}'."));
+
+        public Task<CommandResult> UnblockIpAsync(IpBlockRequest request, CancellationToken cancellationToken)
+        {
+            Unblocked.Enqueue(request);
+            return Task.FromResult(CommandResult.Ok($"Unblocked {request.IpAddress}."));
+        }
     }
 
     [Fact]
@@ -97,6 +144,84 @@ public class ProtocolTests
 
         cts.Cancel();
         await serverTask;
+    }
+
+    [Fact]
+    public async Task Request_log_and_ip_blocking_round_trip_over_the_pipe()
+    {
+        var pipeName = "iismonitor-test-" + Guid.NewGuid().ToString("N")[..8];
+        var host = new FakeHost();
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        var server = new PipeServer(host, () => new NamedPipeServerStream(
+            pipeName, PipeDirection.InOut, NamedPipeServerStream.MaxAllowedServerInstances, PipeTransmissionMode.Byte, PipeOptions.Asynchronous));
+        var serverTask = server.RunAsync(cts.Token);
+
+        await using (var client = await PipeClientBackend.TryConnectAsync(TimeSpan.FromSeconds(10), cts.Token, pipeName))
+        {
+            Assert.NotNull(client);
+            client.Start();
+            Assert.Equal(3, client.Settings.RequestLogRetentionDays);
+
+            // The new settings survive a save through the pipe (the reason for protocol version 2).
+            var settings = await client.UpdateSettingsAsync(
+                new MonitorSettings { RequestTrackingPools = ["ShopPool", " ApiPool "], RequestLogRetentionDays = 10 }, cts.Token);
+            Assert.Equal(["ApiPool", "ShopPool"], settings.RequestTrackingPools);
+            Assert.Equal(10, settings.RequestLogRetentionDays);
+
+            var from = new DateTime(2026, 3, 1, 12, 0, 0, DateTimeKind.Utc);
+            var report = await client.QueryRequestLogAsync(new RequestLogQuery
+            {
+                AppPool = "ShopPool",
+                FromUtc = from,
+                ToUtc = from.AddHours(1),
+                View = RequestLogView.ClientDetail,
+                Key = "203.0.113.7",
+                PerMinute = false,
+            }, cts.Token);
+            Assert.Equal(RequestLogView.ClientDetail, report.View);
+            var row = Assert.Single(report.Details);
+            Assert.Equal(HistoryStore.ToUnixMs(from), row.MinuteUnixMs);
+            Assert.Equal("203.0.113.7", row.ClientIp);
+            Assert.Equal("ShopPool/login", row.Url);
+            Assert.Equal(("POST", 401, 1, 70L, 12.5), (row.Method, row.Status, row.SubStatus, row.Hits, row.AverageTimeMs));
+            Assert.Equal((1L, 7L, true, true, 4096L), (report.TotalRows, report.TotalHits, report.Truncated, report.LoggingFieldsMissing, report.DatabaseBytes));
+            Assert.Equal(["Tracking is off for this app pool."], report.Warnings);
+            Assert.Empty(report.Summaries);
+
+            var blocked = await client.ListBlockedIpsAsync(cts.Token);
+            Assert.Equal(2, blocked.Count);
+            Assert.Equal(("203.0.113.7", null, "Shop"), (blocked[0].IpAddress, blocked[0].SubnetMask, blocked[0].Location));
+            Assert.Equal(("198.51.100.0", "255.255.255.0", ""), (blocked[1].IpAddress, blocked[1].SubnetMask, blocked[1].Location));
+
+            var ok = await client.BlockIpAsync(new IpBlockRequest { IpAddress = "203.0.113.7", AppPool = "ShopPool" }, cts.Token);
+            Assert.True(ok.Success);
+            Assert.Equal("Blocked 203.0.113.7 for ShopPool.", ok.Message);
+            var failed = await client.BlockIpAsync(new IpBlockRequest { IpAddress = "203.0.113.7", AppPool = "Nope" }, cts.Token);
+            Assert.False(failed.Success);
+            Assert.Equal("No app pool 'Nope'.", failed.Message);
+
+            Assert.True((await client.UnblockIpAsync(new IpBlockRequest { IpAddress = "203.0.113.7", Location = "" }, cts.Token)).Success);
+            var unblocked = Assert.Single(host.Unblocked);
+            Assert.Equal(("203.0.113.7", "", null), (unblocked.IpAddress, unblocked.Location, unblocked.AppPool));
+        }
+
+        cts.Cancel();
+        await serverTask;
+    }
+
+    [Fact]
+    public async Task In_process_backend_forwards_request_log_and_blocking_calls()
+    {
+        var host = new FakeHost();
+        await using var backend = new InProcessBackend(host);
+
+        var report = await backend.QueryRequestLogAsync(new RequestLogQuery { AppPool = "ShopPool", View = RequestLogView.UrlDetail, Key = "/x" });
+        Assert.Equal(RequestLogView.UrlDetail, report.View);
+        Assert.Equal("/x", Assert.Single(report.Details).ClientIp);
+        Assert.Equal(2, (await backend.ListBlockedIpsAsync()).Count);
+        Assert.True((await backend.BlockIpAsync(new IpBlockRequest { IpAddress = "203.0.113.7", AppPool = "ShopPool" })).Success);
+        Assert.True((await backend.UnblockIpAsync(new IpBlockRequest { IpAddress = "203.0.113.7", Location = "Shop" })).Success);
+        Assert.Equal("Shop", Assert.Single(host.Unblocked).Location);
     }
 
     [Fact]

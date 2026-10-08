@@ -4,6 +4,7 @@ using System.Threading.Channels;
 using IISMonitor.Core.History;
 using IISMonitor.Core.Metrics;
 using IISMonitor.Core.Models;
+using IISMonitor.Core.RequestLog;
 using IISMonitor.Core.Settings;
 
 namespace IISMonitor.Core.Protocol;
@@ -141,6 +142,14 @@ public sealed class PipeServer(IMonitorHost host, Func<NamedPipeServerStream> cr
                     await host.QuerySlowQueriesAsync(request.Read<SlowQueryRequest>(), token).ConfigureAwait(false), request.Id),
                 PipeProtocol.EnableIisEtwLogging => Envelope.Create(PipeProtocol.Reply,
                     await host.EnableIisEtwLoggingAsync(token).ConfigureAwait(false), request.Id),
+                PipeProtocol.QueryRequestLog => Envelope.Create(PipeProtocol.Reply,
+                    await host.QueryRequestLogAsync(request.Read<RequestLogQuery>(), token).ConfigureAwait(false), request.Id),
+                PipeProtocol.ListBlockedIps => Envelope.Create(PipeProtocol.Reply,
+                    await host.ListBlockedIpsAsync(token).ConfigureAwait(false), request.Id),
+                PipeProtocol.BlockIp => Envelope.Create(PipeProtocol.Reply,
+                    await host.BlockIpAsync(request.Read<IpBlockRequest>(), token).ConfigureAwait(false), request.Id),
+                PipeProtocol.UnblockIp => Envelope.Create(PipeProtocol.Reply,
+                    await host.UnblockIpAsync(request.Read<IpBlockRequest>(), token).ConfigureAwait(false), request.Id),
                 _ => Envelope.Create(PipeProtocol.Error, new ErrorPayload { Message = $"Unknown request '{request.Type}'." }, request.Id),
             };
         }

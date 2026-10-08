@@ -103,6 +103,43 @@ public class CollectionHelpersTests
         Assert.Equal("/api/orders", e.UriStem);
         Assert.Equal(503, e.StatusCode);
         Assert.Equal(250, e.TimeTakenMs);
+        Assert.Null(e.ClientIp);
+        Assert.Null(e.Method);
+        Assert.Equal(0, e.SubStatus);
+    }
+
+    [Fact]
+    public void Parses_client_ip_method_and_substatus()
+    {
+        var payload = new Dictionary<string, object?>
+        {
+            ["s-sitename"] = "W3SVC1",
+            ["time-taken"] = "5",
+            ["sc-status"] = "401",
+            ["c-ip"] = " 2001:db8::7 ",
+            ["cs-method"] = "POST",
+            ["sc-substatus"] = (ushort)2,
+        };
+
+        Assert.True(IisLogEventParser.TryParse(payload, out var e));
+        Assert.Equal("2001:db8::7", e.ClientIp);
+        Assert.Equal("POST", e.Method);
+        Assert.Equal(401, e.StatusCode);
+        Assert.Equal(2, e.SubStatus);
+
+        var missing = new Dictionary<string, object?>
+        {
+            ["s-sitename"] = "W3SVC1",
+            ["time-taken"] = "5",
+            ["C_IP"] = "-",
+            ["cs-method"] = "",
+            ["sc-substatus"] = "-",
+        };
+
+        Assert.True(IisLogEventParser.TryParse(missing, out var m));
+        Assert.Null(m.ClientIp);
+        Assert.Null(m.Method);
+        Assert.Equal(0, m.SubStatus);
     }
 
     [Fact]
