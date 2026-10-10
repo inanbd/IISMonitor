@@ -9,6 +9,18 @@ public static class PipeProtocol
     public const string PipeName = "IISMonitor.v1";
     public const int Version = 1;
 
+    /// <summary>
+    /// Optional parts of the protocol this build supports, sent in the hello. A dashboard talking to
+    /// an older service can tell what that service doesn't provide yet.
+    /// </summary>
+    public static readonly IReadOnlyList<string> Features = [Feature.Database];
+
+    public static class Feature
+    {
+        /// <summary>SQL Server activity per app pool (snapshot.Database, querySlowQueries).</summary>
+        public const string Database = "database";
+    }
+
     public const string Hello = "hello";
     public const string Snapshot = "snapshot";
     public const string Settings = "settings";
@@ -54,6 +66,10 @@ public sealed class Envelope
 public sealed class HelloPayload
 {
     public int ProtocolVersion { get; set; }
+
+    /// <summary>See <see cref="PipeProtocol.Features"/>; empty from services older than the list.</summary>
+    public List<string> Features { get; set; } = [];
+
     public string MachineName { get; set; } = "";
     public Settings.MonitorSettings Settings { get; set; } = new();
 }

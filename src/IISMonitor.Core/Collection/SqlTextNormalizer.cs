@@ -101,7 +101,9 @@ public static class SqlTextNormalizer
                 continue;
             }
 
-            // [bracketed identifier] and "quoted identifier" are names, kept as they are.
+            // [bracketed identifier] is a name, kept as it is. "Double quoted" is a name too, unless
+            // QUOTED_IDENTIFIER is OFF, when it is a string; keep it only when it looks like a name in
+            // a name's place, so a value never survives.
             if (c is '[' or '"')
             {
                 var close = c == '[' ? ']' : '"';
@@ -118,7 +120,8 @@ public static class SqlTextNormalizer
                         break;
                 }
 
-                Emit(sql[start..i]);
+                var token = sql[start..i];
+                Emit(c == '"' && !LooksLikeQuotedName(token, output, Peek(sql, i)) ? "?" : token);
                 continue;
             }
 
@@ -167,6 +170,39 @@ public static class SqlTextNormalizer
         if (output.Length > MaxLength)
             output.Length = MaxLength;
         return output.ToString();
+    }
+
+    private static readonly HashSet<string> NameKeywords = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "FROM", "JOIN", "INTO", "UPDATE", "TABLE", "AS", "EXEC", "EXECUTE", "PROCEDURE", "PROC", "FUNCTION", "VIEW", "ON", "APPLY",
+    };
+
+    /// <summary>
+    /// Whether a "double quoted" token is a name: part of a dotted name, right after a keyword that
+    /// takes a name, or a plain identifier that doesn't follow an operator, comma or bracket.
+    /// </summary>
+    private static bool LooksLikeQuotedName(string token, StringBuilder output, char next)
+    {
+        if (token.Length < 3 || token[^1] != '"')
+            return false;
+
+        var end = output.Length;
+        while (end > 0 && char.IsWhiteSpace(output[end - 1]))
+            end--;
+        var previous = end > 0 ? output[end - 1] : '\0';
+        if (previous == '.' || next == '.')
+            return true;
+
+        var wordStart = end;
+        while (wordStart > 0 && IsWordChar(output[wordStart - 1]))
+            wordStart--;
+        if (wordStart < end && NameKeywords.Contains(output.ToString(wordStart, end - wordStart)))
+            return true;
+
+        var name = token[1..^1];
+        return !"=<>!+-*/%(,".Contains(previous)
+               && (char.IsLetter(name[0]) || name[0] is '_' or '#' or '@')
+               && name.All(ch => IsWordChar(ch) || ch is '#' or '@' or '$');
     }
 
     private static char Peek(string s, int index) => index >= 0 && index < s.Length ? s[index] : '\0';

@@ -204,7 +204,8 @@ public sealed class MonitorEngine : IMonitorHost, IAsyncDisposable
             .Select(p => p.Pid)
             .ToList();
         var samples = _sampler.Sample(members.Keys.Concat(sqlServerPids));
-        var unreadable = members.Count - samples.Count;
+        // Count app pool processes only; the samples also hold the local SQL Server.
+        var unreadable = members.Keys.Count(pid => !samples.ContainsKey(pid));
         health.Add(unreadable == 0
             ? Ok("Processes", $"{workerPools.Count} worker processes; {members.Count} processes in app pools.")
             : Fail("Processes", $"{unreadable} of {members.Count} app pool processes could not be read (access denied or exited)."));

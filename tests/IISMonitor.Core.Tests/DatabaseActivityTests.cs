@@ -29,6 +29,10 @@ public sealed class DatabaseActivityTests : IDisposable
     [InlineData("SELECT 1 -- note 'secret'\n/* outer /* inner 'x' */ still */ FROM t2", "SELECT ? FROM t2")]
     [InlineData("  EXEC   dbo.GetOrders\r\n  @CustomerId = 17  ", "EXEC dbo.GetOrders @CustomerId = ?")]
     [InlineData("UPDATE t SET a = 'unterminated", "UPDATE t SET a = ?")]
+    // With QUOTED_IDENTIFIER OFF, "..." is a string: values go, names stay.
+    [InlineData("SELECT \"Col\" FROM dbo.\"Order Lines\" WHERE Name = \"Jane Doe\" AND City IN (\"Oslo\", \"Rome\")",
+        "SELECT \"Col\" FROM dbo.\"Order Lines\" WHERE Name = ? AND City IN (?, ?)")]
+    [InlineData("SELECT \"x@example.com\" AS \"Mail Box\"", "SELECT ? AS \"Mail Box\"")]
     public void Normalizer_strips_literals_but_keeps_names(string sql, string expected) =>
         Assert.Equal(expected, SqlTextNormalizer.Normalize(sql));
 
@@ -62,7 +66,7 @@ public sealed class DatabaseActivityTests : IDisposable
             LocalSessions = [new(52, 100, "running", 0), new(53, 200, "sleeping", 1)],
         });
 
-        var result = acc.Drain(_ => ("SELECT ?", null))!;
+        var result = acc.Drain(_ => new SqlText("SELECT ?", null))!;
 
         Assert.Equal(2, result.Samples);
         var shop = result.ByPid[100];
@@ -76,7 +80,15 @@ public sealed class DatabaseActivityTests : IDisposable
         Assert.Equal(0.5, result.OtherServersLoad);
         Assert.Equal("SELECT ?", Assert.Single(result.Running).Statement);
 
-        Assert.Null(acc.Drain(_ => (null, null)));
+        // No new sample before the next tick: the same picture again, nothing new finished.
+        var again = acc.Drain(_ => default)!;
+        Assert.Equal(0, again.Samples);
+        Assert.Equal(1.5, again.ByPid[100].Load);
+        Assert.Equal(1, again.ByPid[100].Blocked);
+        Assert.Single(again.Running);
+        Assert.Empty(again.CompletedSlow);
+
+        Assert.Null(new DbActivityAccumulator(2000).Drain(_ => default));
     }
 
     [Fact]
@@ -86,16 +98,17 @@ public sealed class DatabaseActivityTests : IDisposable
         acc.Add(new DbSample { TimeUtc = T0, Requests = [Request(51, 100, 1500)] });
         acc.Add(new DbSample { TimeUtc = T0.AddSeconds(1), Requests = [Request(51, 100, 2500, "suspended", "LCK_M_U", blockedBy: 70)] });
         acc.Add(new DbSample { TimeUtc = T0.AddSeconds(2), Requests = [Request(51, 100, 3500, "suspended", "LCK_M_U", blockedBy: 70)] });
-        Assert.Equal(1, acc.Drain(_ => (null, null))!.ByPid[100].SlowRunning);
+        Assert.Equal(1, acc.Drain(_ => default)!.ByPid[100].SlowRunning);
         Assert.Contains("k1", acc.PendingTextKeys());
 
         // Same session, new request (different start time): the first one has finished.
         acc.Add(new DbSample { TimeUtc = T0.AddSeconds(3), Requests = [Request(51, 100, 100, start: T0.AddSeconds(3))] });
-        var result = acc.Drain(key => key == "k1" ? ("UPDATE t SET a = ?", "Shop.dbo.SaveOrder") : (null, null))!;
+        var result = acc.Drain(key => key == "k1" ? new SqlText("UPDATE t SET a = ?", "Shop.dbo.SaveOrder") : default)!;
 
         var slow = Assert.Single(result.CompletedSlow);
         Assert.Equal(3500, slow.DurationMs);
-        Assert.Equal(T0.AddMilliseconds(3500), slow.EndUtc);
+        Assert.Equal(T0.AddMilliseconds(-1500), slow.StartUtc);   // first seen 1.5 s into the query
+        Assert.Equal(T0.AddMilliseconds(2000), slow.EndUtc);
         Assert.Equal("LCK_M_U", slow.MainWait);
         Assert.True(slow.WasBlocked);
         Assert.Equal("UPDATE t SET a = ?", slow.Statement);
@@ -119,9 +132,9 @@ public sealed class DatabaseActivityTests : IDisposable
 
         var slow = Assert.Single(acc.Drain(key => key switch
         {
-            "batch" => ("DECLARE @i int = ?; WHILE ...", null),
-            "s2" => ("SET @i += ?;", null),
-            _ => ("other", null),
+            "batch" => new SqlText("DECLARE @i int = ?; WHILE ...", null),
+            "s2" => new SqlText("SET @i += ?;", null),
+            _ => new SqlText("other", null),
         })!.CompletedSlow);
         Assert.Equal("SET @i += ?;", slow.Statement);
         Assert.Equal("DECLARE @i int = ?; WHILE ...", slow.Batch);
@@ -136,7 +149,7 @@ public sealed class DatabaseActivityTests : IDisposable
         acc.Add(new DbSample { TimeUtc = T0, Requests = [Request(51, 100, 1500, textKey: "s1") with { BatchKey = "proc" }] });
         acc.Add(new DbSample { TimeUtc = T0.AddSeconds(1) });
 
-        var slow = Assert.Single(acc.Drain(key => key == "proc" ? ("CREATE PROCEDURE ...", "Shop.dbo.Save") : ("UPDATE t SET a = ?", "Shop.dbo.Save"))!.CompletedSlow);
+        var slow = Assert.Single(acc.Drain(key => key == "proc" ? new SqlText("CREATE PROCEDURE ...", "Shop.dbo.Save") : new SqlText("UPDATE t SET a = ?", "Shop.dbo.Save"))!.CompletedSlow);
         Assert.Equal("Shop.dbo.Save", slow.ObjectName);
         Assert.Null(slow.Batch);
         Assert.Equal("UPDATE t SET a = ?", slow.Statement);
@@ -157,10 +170,148 @@ public sealed class DatabaseActivityTests : IDisposable
         });
         acc.Add(new DbSample { TimeUtc = T0.AddSeconds(1) });
 
-        var result = acc.Drain(_ => (null, null))!;
+        var result = acc.Drain(_ => default)!;
         Assert.Equal(0, result.ByPid.GetValueOrDefault(100).Load);
         Assert.Empty(result.CompletedSlow);
         Assert.Empty(result.Running);
+    }
+
+    private static readonly DateTime RawStart = new(2026, 10, 6, 11, 0, 0, DateTimeKind.Unspecified);
+
+    [Fact]
+    public void Accumulator_takes_the_real_duration_from_the_session_when_a_query_ends_between_samples()
+    {
+        var acc = new DbActivityAccumulator(2000, 1000);
+        Assert.Equal(750, acc.CandidateMs);
+        RequestObservation At(DateTime raw, double ms) => Request(51, 100, ms) with { RawStart = raw };
+        SessionObservation Session(DateTime raw, DateTime? end) => new(51, 100, end is null ? "running" : "sleeping", 0, raw, end);
+
+        // 2.4 s query, seen once at 0.9 s; the session says when it really ended.
+        acc.Add(new DbSample { TimeUtc = T0, Requests = [At(RawStart, 900)], LocalSessions = [Session(RawStart, null)] });
+        acc.Add(new DbSample { TimeUtc = T0.AddSeconds(1), LocalSessions = [Session(RawStart, RawStart.AddMilliseconds(2400))] });
+
+        // 1.6 s query: watched, but not slow.
+        var second = RawStart.AddSeconds(5);
+        acc.Add(new DbSample { TimeUtc = T0.AddSeconds(6), Requests = [At(second, 1000)], LocalSessions = [Session(second, null)] });
+        acc.Add(new DbSample { TimeUtc = T0.AddSeconds(7), LocalSessions = [Session(second, second.AddMilliseconds(1600))] });
+
+        // The session moved on to another request: only the elapsed time seen is known.
+        var third = RawStart.AddSeconds(10);
+        acc.Add(new DbSample { TimeUtc = T0.AddSeconds(11), Requests = [At(third, 1000)], LocalSessions = [Session(third, null)] });
+        acc.Add(new DbSample { TimeUtc = T0.AddSeconds(12), LocalSessions = [Session(third.AddSeconds(1.5), null)] });
+
+        var slow = Assert.Single(acc.Drain(_ => default)!.CompletedSlow);
+        Assert.Equal(2400, slow.DurationMs);
+        Assert.Equal(T0.AddMilliseconds(-900), slow.StartUtc);
+        Assert.Equal("CPU", slow.MainWait);
+    }
+
+    [Fact]
+    public void Accumulator_samples_again_when_a_watched_query_reaches_the_threshold()
+    {
+        var acc = new DbActivityAccumulator(2000, 1000);
+        Assert.Null(acc.NextThresholdCrossingUtc());
+        acc.Add(new DbSample { TimeUtc = T0, Requests = [Request(51, 100, 1200)] });
+        Assert.Equal(T0.AddMilliseconds(900), acc.NextThresholdCrossingUtc());
+
+        // The extra sample counts for slow queries, not for load.
+        acc.Add(new DbSample { TimeUtc = T0.AddMilliseconds(900), Requests = [Request(51, 100, 2100), Request(52, 100, 10)], IsProbe = true });
+        Assert.Null(acc.NextThresholdCrossingUtc());
+        acc.Add(new DbSample { TimeUtc = T0.AddSeconds(1) });
+
+        var result = acc.Drain(_ => default)!;
+        Assert.Equal(2, result.Samples);
+        Assert.Equal(0.5, result.ByPid[100].Load);
+        Assert.Equal(2100, Assert.Single(result.CompletedSlow).DurationMs);
+    }
+
+    [Fact]
+    public void Accumulator_keeps_watching_queries_of_a_server_that_did_not_answer()
+    {
+        var acc = new DbActivityAccumulator(2000, 1000);
+        RequestObservation Remote(double ms) => Request(1_000_051, 100, ms) with { ServerIndex = 1 };
+
+        acc.Add(new DbSample { TimeUtc = T0, Requests = [Remote(2500)], ServersSampled = new HashSet<int> { 0, 1 } });
+        acc.Add(new DbSample { TimeUtc = T0.AddSeconds(1), ServersSampled = new HashSet<int> { 0 } });
+        Assert.Empty(acc.Drain(_ => default)!.CompletedSlow);
+        Assert.Null(acc.NextThresholdCrossingUtc());
+
+        acc.Add(new DbSample { TimeUtc = T0.AddSeconds(2), Requests = [Remote(4500)], ServersSampled = new HashSet<int> { 0, 1 } });
+        acc.Add(new DbSample { TimeUtc = T0.AddSeconds(3), ServersSampled = new HashSet<int> { 0, 1 } });
+        Assert.Equal(4500, Assert.Single(acc.Drain(_ => default)!.CompletedSlow).DurationMs);
+    }
+
+    [Fact]
+    public void Accumulator_keeps_one_record_for_a_batch_that_pauses_in_waitfor()
+    {
+        var acc = new DbActivityAccumulator(1000);
+        acc.Add(new DbSample { TimeUtc = T0, Requests = [Request(51, 100, 1500)] });
+        acc.Add(new DbSample { TimeUtc = T0.AddSeconds(1), Requests = [Request(51, 100, 2500, "suspended", "WAITFOR", command: "WAITFOR")] });
+        acc.Add(new DbSample { TimeUtc = T0.AddSeconds(2), Requests = [Request(51, 100, 3500)] });
+        acc.Add(new DbSample { TimeUtc = T0.AddSeconds(3) });
+
+        var result = acc.Drain(_ => default)!;
+        var slow = Assert.Single(result.CompletedSlow);
+        Assert.Equal(3500, slow.DurationMs);
+        Assert.Equal("CPU", slow.MainWait);   // the pause is neither load nor a wait worth naming
+        Assert.Equal(0.5, result.ByPid[100].Load);
+    }
+
+    [Theory]
+    [InlineData("proc:Shop.dbo.Outer", "Shop.dbo.Outer", null, "Shop.dbo.Inner")]
+    [InlineData("text:SELECT dbo.f(?)", null, "SELECT dbo.f(?)", "Shop.dbo.Inner")]
+    [InlineData(null, "Shop.dbo.Inner", null, null)]
+    public void Accumulator_names_slow_queries_by_the_call_the_app_made(string? entryPoint, string? objectName, string? batch, string? statementObject)
+    {
+        var acc = new DbActivityAccumulator(1000);
+        acc.Add(new DbSample { TimeUtc = T0, Requests = [Request(51, 100, 1500, textKey: "inner-statement") with { BatchKey = "inner-batch" }] });
+        var watched = Assert.Single(acc.PendingEntryPoints());
+        Assert.Equal(51, watched.RawSession);
+        acc.SetEntryPoint(watched, entryPoint);
+        Assert.Empty(acc.PendingEntryPoints());
+        acc.Add(new DbSample { TimeUtc = T0.AddSeconds(1) });
+
+        var slow = Assert.Single(acc.Drain(key => key switch
+        {
+            "inner-batch" => new SqlText("CREATE PROCEDURE dbo.Inner AS ...", "Shop.dbo.Inner"),
+            "inner-statement" => new SqlText("UPDATE t SET a = ?", "Shop.dbo.Inner"),
+            _ => default,
+        })!.CompletedSlow);
+        Assert.Equal(objectName, slow.ObjectName);
+        Assert.Equal(batch, slow.Batch);
+        Assert.Equal("UPDATE t SET a = ?", slow.Statement);
+        Assert.Equal(statementObject, slow.StatementObject);
+    }
+
+    [Fact]
+    public void Accumulator_records_which_process_blocked_a_query()
+    {
+        var acc = new DbActivityAccumulator(1000);
+        SessionObservation[] sessions = [new(51, 100, "running", 0), new(70, 300, "sleeping", 1)];
+        acc.Add(new DbSample { TimeUtc = T0, Requests = [Request(51, 100, 1500, "suspended", "LCK_M_U", blockedBy: 70)], LocalSessions = sessions });
+        var running = Assert.Single(acc.Drain(_ => default)!.Running);
+        Assert.Equal(300, running.BlockerPid);
+
+        acc.Add(new DbSample { TimeUtc = T0.AddSeconds(1), LocalSessions = sessions });
+        var slow = Assert.Single(acc.Drain(_ => default)!.CompletedSlow);
+        Assert.True(slow.WasBlocked);
+        Assert.Equal(300, slow.BlockerPid);
+        Assert.Equal("LCK_M_U", slow.MainWait);
+    }
+
+    [Fact]
+    public void Accumulator_averages_load_over_the_last_minute()
+    {
+        var acc = new DbActivityAccumulator(2000);
+        acc.Add(new DbSample { TimeUtc = T0, Requests = [Request(51, 100, 10), Request(52, 100, 10), Request(53, 100, 10), Request(54, 100, 10)] });
+        acc.Drain(_ => default);
+        acc.Add(new DbSample { TimeUtc = T0.AddSeconds(30) });
+        var recent = acc.Drain(_ => default)!.ByPid[100];
+        Assert.Equal(0, recent.Load);
+        Assert.Equal(2, recent.Load1m);   // 4 then 0
+
+        acc.Add(new DbSample { TimeUtc = T0.AddSeconds(61), Requests = [Request(55, 100, 10)] });
+        Assert.Equal(0.5, acc.Drain(_ => default)!.ByPid[100].Load1m);   // the first sample has left the window
     }
 
     [Fact]
@@ -212,6 +363,72 @@ public sealed class DatabaseActivityTests : IDisposable
         Assert.Equal(2_000_000_000, snapshot.Server.SqlServerMemoryBytes);
         Assert.Equal(0, snapshot.Server.SqlServerCpuPercent);
         Assert.Equal(1, MetricCatalog.Extract(snapshot.AppPools.Single(p => p.Name == "Shop"), 1)["db_slow"] - 1);
+    }
+
+    [Fact]
+    public void Composer_keeps_the_pool_of_a_worker_that_exited_and_names_the_blocking_pool()
+    {
+        var composer = new SnapshotComposer("WEB01", 4);
+        CollectionInput Tick(DateTime time, bool shopRunning, DbActivityInput? db = null) => new()
+        {
+            TimestampUtc = time,
+            Topology = new IisTopology { AppPools = [new AppPoolInfo { Name = "Shop" }, new AppPoolInfo { Name = "Api" }] },
+            Processes = shopRunning ? [new(100, 4, "w3wp.exe", 10), new(200, 4, "w3wp.exe", 10)] : [new(200, 4, "w3wp.exe", 10)],
+            WorkerProcessPools = shopRunning ? new Dictionary<int, string> { [100] = "Shop", [200] = "Api" } : new Dictionary<int, string> { [200] = "Api" },
+            SqlServerPids = [400],
+            DbActivity = db,
+        };
+
+        composer.Compose(Tick(T0, shopRunning: true));
+        var snapshot = composer.Compose(Tick(T0.AddSeconds(1), shopRunning: false, new DbActivityInput
+        {
+            Samples = 1,
+            CompletedSlow = [new SlowQuery { Pid = 100, WasBlocked = true, BlockerPid = 200 }],
+            Running = [new RunningQuery { Pid = 200, BlockerPid = 999 }],
+        }));
+
+        var slow = Assert.Single(snapshot.Database!.CompletedSlow);
+        Assert.Equal("Shop", slow.AppPool);
+        Assert.Equal("Api", slow.BlockerAppPool);
+        Assert.Null(Assert.Single(snapshot.Database.Running).BlockerAppPool);
+
+        // sqlservr.exe couldn't be read: unknown, not 0.
+        Assert.Null(snapshot.Server.SqlServerCpuPercent);
+        Assert.Null(snapshot.Server.SqlServerMemoryBytes);
+
+        var later = composer.Compose(Tick(T0.AddMinutes(10), shopRunning: false, new DbActivityInput
+        {
+            Samples = 1,
+            CompletedSlow = [new SlowQuery { Pid = 100 }],
+        }));
+        Assert.Null(Assert.Single(later.Database!.CompletedSlow).AppPool);
+    }
+
+    [Fact]
+    public void Slow_queries_keep_the_nested_module_the_blocker_and_cpu_as_main_wait()
+    {
+        var store = new HistoryStore(Path.Combine(_directory, "blockers.db"));
+        store.Initialize();
+        SlowQuery Run(double ms, string? inner, string? blocker, string? wait) => new()
+        {
+            StartUtc = T0, EndUtc = T0.AddMilliseconds(ms), DurationMs = ms, AppPool = "Shop", Database = "Shop",
+            Statement = "UPDATE t SET a = ?", ObjectName = "Shop.dbo.Outer", StatementObject = inner, Pid = 1,
+            WasBlocked = blocker is not null, BlockerAppPool = blocker == "-" ? null : blocker, MainWait = wait,
+        };
+
+        store.WriteSlowQueries(
+        [
+            Run(3000, "Shop.dbo.Inner", "Api", "LCK_M_U"),
+            Run(9000, "Shop.dbo.Other", "Api", "CPU"),
+            Run(2500, null, "-", "CPU"),
+            Run(2200, null, null, null),
+        ]);
+
+        var group = Assert.Single(store.QuerySlowQueries(new SlowQueryRequest { FromUtc = T0.AddMinutes(-1), ToUtc = T0.AddMinutes(1) }).Groups);
+        Assert.Equal("Shop.dbo.Other", group.StatementObject);   // the longest run's
+        Assert.Equal("Api", group.BlockerAppPool);
+        Assert.Equal(3, group.BlockedCount);
+        Assert.Equal("CPU", group.MainWait);   // NULL from older rows counts as CPU too
     }
 
     [Fact]

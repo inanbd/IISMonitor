@@ -9,7 +9,11 @@ namespace IISMonitor.Core.Collection;
 /// </summary>
 public sealed class SnapshotComposer(string machineName, int processorCount)
 {
+    /// <summary>How long a worker process's app pool is remembered after it exits, for its last slow queries.</summary>
+    private static readonly TimeSpan PoolMemory = TimeSpan.FromMinutes(5);
+
     private readonly Dictionary<(int Pid, long Created), ProcessState> _previous = [];
+    private readonly Dictionary<int, (string Pool, DateTime SeenUtc)> _recentPools = [];
     private SystemSample? _previousSystem;
     private DateTime? _previousTimestamp;
 
@@ -38,33 +42,57 @@ public sealed class SnapshotComposer(string machineName, int processorCount)
         snapshot.AppPools = pools;
         snapshot.Sites = ComposeSites(input);
 
-        var sqlServer = input.SqlServerPids.Where(processes.ContainsKey).Select(pid => processes[pid]).ToList();
+        // Only SQL Server processes that could be read; otherwise the values stay unknown, not 0.
+        var sqlServer = input.SqlServerPids.Where(pid => processes.ContainsKey(pid) && input.ProcessSamples.ContainsKey(pid))
+            .Select(pid => processes[pid]).ToList();
         if (sqlServer.Count > 0)
         {
             snapshot.Server.SqlServerCpuPercent = sqlServer.Sum(p => p.CpuPercent);
             snapshot.Server.SqlServerMemoryBytes = sqlServer.Sum(p => p.WorkingSetBytes);
         }
 
+        foreach (var (pid, membership) in members)
+            _recentPools[pid] = (membership.AppPool, input.TimestampUtc);
+        foreach (var expired in _recentPools.Where(kv => input.TimestampUtc - kv.Value.SeenUtc > PoolMemory).Select(kv => kv.Key).ToList())
+            _recentPools.Remove(expired);
+
         if (input.DbActivity is { } db)
             snapshot.Database = ComposeDatabase(db, members, pools);
         return snapshot;
     }
 
-    private static DatabaseActivity ComposeDatabase(DbActivityInput db, Dictionary<int, PoolMembership> members, List<AppPoolMetrics> pools)
+    private DatabaseActivity ComposeDatabase(DbActivityInput db, Dictionary<int, PoolMembership> members, List<AppPoolMetrics> pools)
     {
-        string? PoolOf(int pid) => members.TryGetValue(pid, out var m) ? m.AppPool : null;
+        // A slow query can finish (or be noticed as finished) after its worker process exited, for
+        // example on recycling; it still belongs to that pool.
+        string? PoolOf(int? pid) =>
+            pid is not { } id ? null
+            : members.TryGetValue(id, out var m) ? m.AppPool
+            : _recentPools.TryGetValue(id, out var recent) ? recent.Pool
+            : null;
 
         foreach (var query in db.Running)
+        {
             query.AppPool = PoolOf(query.Pid);
-        foreach (var query in db.CompletedSlow)
-            query.AppPool = PoolOf(query.Pid);
+            query.BlockerAppPool = PoolOf(query.BlockerPid);
+        }
 
+        foreach (var query in db.CompletedSlow)
+        {
+            query.AppPool = PoolOf(query.Pid);
+            query.BlockerAppPool = PoolOf(query.BlockerPid);
+        }
+
+        var others = db.ByPid.Where(kv => !members.ContainsKey(kv.Key)).Select(kv => kv.Value).ToList();
         return new DatabaseActivity
         {
             SlowThresholdMs = db.SlowThresholdMs,
             PoolLoad = pools.Sum(p => p.DbLoad ?? 0),
-            OtherLocalLoad = db.ByPid.Where(kv => !members.ContainsKey(kv.Key)).Sum(kv => kv.Value.Load),
+            OtherLocalLoad = others.Sum(a => a.Load),
             OtherServersLoad = db.OtherServersLoad,
+            PoolLoad1m = pools.Sum(p => p.DbLoad1m ?? 0),
+            OtherLocalLoad1m = others.Sum(a => a.Load1m),
+            OtherServersLoad1m = db.OtherServersLoad1m,
             Running = db.Running,
             CompletedSlow = db.CompletedSlow,
         };
@@ -281,6 +309,8 @@ public sealed class SnapshotComposer(string machineName, int processorCount)
                 pool.DbActiveSessions = activity.Sum(a => a.Active);
                 pool.DbLoad = activity.Sum(a => a.Load);
                 pool.DbCpuLoad = activity.Sum(a => a.CpuLoad);
+                pool.DbLoad1m = activity.Sum(a => a.Load1m);
+                pool.DbCpuLoad1m = activity.Sum(a => a.CpuLoad1m);
                 pool.DbBlocked = activity.Sum(a => a.Blocked);
                 pool.DbBlocking = activity.Sum(a => a.Blocking);
                 pool.DbIdleInTransaction = activity.Sum(a => a.IdleInTransaction);

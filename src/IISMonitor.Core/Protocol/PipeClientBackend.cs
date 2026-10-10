@@ -26,7 +26,10 @@ public sealed class PipeClientBackend : IMonitorBackend
         _connection = connection;
         Settings = hello.Settings;
         MachineName = hello.MachineName;
+        Features = hello.Features ?? [];
     }
+
+    public IReadOnlyList<string> Features { get; }
 
     public string Description => "Windows service";
 

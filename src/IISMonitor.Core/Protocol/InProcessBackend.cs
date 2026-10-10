@@ -22,6 +22,8 @@ public sealed class InProcessBackend : IMonitorBackend
 
     public bool IsStandalone => true;
 
+    public IReadOnlyList<string> Features => PipeProtocol.Features;
+
     public MonitorSettings Settings => _host.Settings;
 
     public event EventHandler<MonitorSnapshot>? SnapshotReceived;

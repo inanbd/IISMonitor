@@ -46,6 +46,9 @@ public interface IMonitorBackend : IAsyncDisposable
 
     bool IsStandalone { get; }
 
+    /// <summary>Optional protocol features the collector supports (<see cref="PipeProtocol.Feature"/>).</summary>
+    IReadOnlyList<string> Features { get; }
+
     MonitorSettings Settings { get; }
 
     event EventHandler<MonitorSnapshot>? SnapshotReceived;

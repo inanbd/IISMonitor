@@ -82,6 +82,7 @@ public sealed class PipeServer(IMonitorHost host, Func<NamedPipeServerStream> cr
             await connection.SendAsync(Envelope.Create(PipeProtocol.Hello, new HelloPayload
             {
                 ProtocolVersion = PipeProtocol.Version,
+                Features = [.. PipeProtocol.Features],
                 MachineName = Environment.MachineName,
                 Settings = host.Settings,
             }), token).ConfigureAwait(false);

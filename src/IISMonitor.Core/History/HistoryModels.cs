@@ -64,6 +64,9 @@ public sealed class SlowQueryGroup
     /// <summary>The statement the longest run spent most of its time in.</summary>
     public string Statement { get; set; } = "";
 
+    /// <summary>Nested procedure, function or trigger that statement is in, if not the called procedure.</summary>
+    public string? StatementObject { get; set; }
+
     public int Count { get; set; }
     public double AverageMs { get; set; }
     public double MaxMs { get; set; }
@@ -71,7 +74,13 @@ public sealed class SlowQueryGroup
     public double TotalCpuMs { get; set; }
     public long TotalLogicalReads { get; set; }
     public int BlockedCount { get; set; }
+
+    /// <summary>Wait type the runs spent most time in, or "CPU".</summary>
     public string? MainWait { get; set; }
+
+    /// <summary>App pool that blocked the runs most often; "" for a process that isn't an app pool; null if never blocked.</summary>
+    public string? BlockerAppPool { get; set; }
+
     public long LastSeenUnixMs { get; set; }
 }
 

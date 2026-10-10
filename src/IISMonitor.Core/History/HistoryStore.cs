@@ -71,12 +71,14 @@ public sealed partial class HistoryStore
                 logical_reads INTEGER NOT NULL,
                 writes INTEGER NOT NULL,
                 main_wait TEXT,
-                was_blocked INTEGER NOT NULL
+                was_blocked INTEGER NOT NULL,
+                statement_object TEXT,
+                blocker_pool TEXT
             );
             CREATE INDEX IF NOT EXISTS ix_slow_queries_end ON slow_queries (end_ts);
             """);
 
-        // Databases from the first version of this table lack the batch and grouping columns.
+        // Databases from earlier versions of this table lack some columns.
         var slowColumns = Columns(connection, "slow_queries");
         if (!slowColumns.Contains("batch_text"))
             Execute(connection, "ALTER TABLE slow_queries ADD COLUMN batch_text TEXT;");
@@ -85,6 +87,11 @@ public sealed partial class HistoryStore
             Execute(connection, "ALTER TABLE slow_queries ADD COLUMN group_key TEXT;");
             Execute(connection, "UPDATE slow_queries SET group_key = COALESCE(object_name, statement) WHERE group_key IS NULL;");
         }
+
+        if (!slowColumns.Contains("statement_object"))
+            Execute(connection, "ALTER TABLE slow_queries ADD COLUMN statement_object TEXT;");
+        if (!slowColumns.Contains("blocker_pool"))
+            Execute(connection, "ALTER TABLE slow_queries ADD COLUMN blocker_pool TEXT;");
 
         Execute(connection, "CREATE INDEX IF NOT EXISTS ix_slow_queries_group ON slow_queries (group_key, end_ts);");
 
@@ -174,12 +181,12 @@ public sealed partial class HistoryStore
         insert.CommandText = """
             INSERT INTO slow_queries (start_ts, end_ts, app_pool, pid, database_name, login_name, program_name, query_hash,
                                       object_name, statement, batch_text, group_key, duration_ms, cpu_ms, logical_reads, writes,
-                                      main_wait, was_blocked)
+                                      main_wait, was_blocked, statement_object, blocker_pool)
             VALUES ($start, $end, $pool, $pid, $db, $login, $program, $hash, $object, $statement, $batch, $group, $duration, $cpu,
-                    $reads, $writes, $wait, $blocked);
+                    $reads, $writes, $wait, $blocked, $inner, $blocker);
             """;
         var p = new Dictionary<string, SqliteParameter>();
-        foreach (var name in new[] { "start", "end", "pool", "pid", "db", "login", "program", "hash", "object", "statement", "batch", "group", "duration", "cpu", "reads", "writes", "wait", "blocked" })
+        foreach (var name in new[] { "start", "end", "pool", "pid", "db", "login", "program", "hash", "object", "statement", "batch", "group", "duration", "cpu", "reads", "writes", "wait", "blocked", "inner", "blocker" })
             p[name] = insert.Parameters.Add(new SqliteParameter { ParameterName = "$" + name });
 
         foreach (var q in queries)
@@ -202,6 +209,9 @@ public sealed partial class HistoryStore
             p["writes"].Value = q.Writes;
             p["wait"].Value = (object?)q.MainWait ?? DBNull.Value;
             p["blocked"].Value = q.WasBlocked ? 1 : 0;
+            p["inner"].Value = (object?)q.StatementObject ?? DBNull.Value;
+            // "" = blocked by a process that isn't an IIS app pool (or not on this server).
+            p["blocker"].Value = q.WasBlocked ? q.BlockerAppPool ?? "" : DBNull.Value;
             insert.ExecuteNonQuery();
         }
 
@@ -216,18 +226,27 @@ public sealed partial class HistoryStore
         using (var groups = connection.CreateCommand())
         {
             // Runs group by procedure or batch (see GroupKey). The statement shown is the one the
-            // longest run spent most of its time in; the wait is the most common main wait.
+            // longest run spent most of its time in; the wait is the most common main wait (rows
+            // from before CPU was recorded have NULL for it), and the blocker the most common one.
             groups.CommandText = """
                 SELECT app_pool, database_name, MAX(object_name), MAX(batch_text), COUNT(*), AVG(duration_ms), MAX(duration_ms),
                        SUM(duration_ms), SUM(cpu_ms), SUM(logical_reads), SUM(was_blocked), MAX(end_ts),
-                       (SELECT w.main_wait FROM slow_queries w
+                       (SELECT COALESCE(w.main_wait, 'CPU') FROM slow_queries w
                         WHERE w.group_key = s.group_key AND w.app_pool = s.app_pool AND w.database_name = s.database_name
-                          AND w.end_ts >= $from AND w.end_ts < $to AND w.main_wait IS NOT NULL
-                        GROUP BY w.main_wait ORDER BY COUNT(*) DESC LIMIT 1),
+                          AND w.end_ts >= $from AND w.end_ts < $to
+                        GROUP BY COALESCE(w.main_wait, 'CPU') ORDER BY COUNT(*) DESC LIMIT 1),
                        (SELECT l.statement FROM slow_queries l
                         WHERE l.group_key = s.group_key AND l.app_pool = s.app_pool AND l.database_name = s.database_name
                           AND l.end_ts >= $from AND l.end_ts < $to
-                        ORDER BY l.duration_ms DESC LIMIT 1)
+                        ORDER BY l.duration_ms DESC LIMIT 1),
+                       (SELECT l.statement_object FROM slow_queries l
+                        WHERE l.group_key = s.group_key AND l.app_pool = s.app_pool AND l.database_name = s.database_name
+                          AND l.end_ts >= $from AND l.end_ts < $to
+                        ORDER BY l.duration_ms DESC LIMIT 1),
+                       (SELECT b.blocker_pool FROM slow_queries b
+                        WHERE b.group_key = s.group_key AND b.app_pool = s.app_pool AND b.database_name = s.database_name
+                          AND b.end_ts >= $from AND b.end_ts < $to AND b.blocker_pool IS NOT NULL
+                        GROUP BY b.blocker_pool ORDER BY COUNT(*) DESC LIMIT 1)
                 FROM slow_queries s
                 WHERE end_ts >= $from AND end_ts < $to AND ($pool IS NULL OR app_pool = $pool)
                 GROUP BY app_pool, database_name, group_key
@@ -255,6 +274,8 @@ public sealed partial class HistoryStore
                     BlockedCount = reader.GetInt32(10),
                     LastSeenUnixMs = reader.GetInt64(11),
                     MainWait = reader.IsDBNull(12) ? null : reader.GetString(12),
+                    StatementObject = reader.IsDBNull(14) ? null : reader.GetString(14),
+                    BlockerAppPool = reader.IsDBNull(15) ? null : reader.GetString(15),
                 });
             }
         }

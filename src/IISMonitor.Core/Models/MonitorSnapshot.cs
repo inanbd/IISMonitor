@@ -89,6 +89,12 @@ public sealed class AppPoolMetrics
     /// <summary>Part of <see cref="DbLoad"/> spent running on CPU (not waiting).</summary>
     public double? DbCpuLoad { get; set; }
 
+    /// <summary><see cref="DbLoad"/> averaged over the last minute; steadier, for ranking pools.</summary>
+    public double? DbLoad1m { get; set; }
+
+    /// <summary><see cref="DbCpuLoad"/> averaged over the last minute.</summary>
+    public double? DbCpuLoad1m { get; set; }
+
     /// <summary>The pool's queries waiting for another session's locks right now.</summary>
     public int? DbBlocked { get; set; }
 
@@ -188,6 +194,13 @@ public sealed class DatabaseActivity
     /// <summary>Same, from other machines.</summary>
     public double OtherServersLoad { get; set; }
 
+    /// <summary><see cref="PoolLoad"/>, <see cref="OtherLocalLoad"/> and <see cref="OtherServersLoad"/> over the last minute.</summary>
+    public double PoolLoad1m { get; set; }
+
+    public double OtherLocalLoad1m { get; set; }
+
+    public double OtherServersLoad1m { get; set; }
+
     /// <summary>Queries from this server running right now, longest first.</summary>
     public List<RunningQuery> Running { get; set; } = [];
 
@@ -213,6 +226,12 @@ public sealed class RunningQuery
     /// <summary>Session holding the lock this query waits for.</summary>
     public int? BlockedBy { get; set; }
 
+    /// <summary>Process on this server that owns the blocking session, if any.</summary>
+    public int? BlockerPid { get; set; }
+
+    /// <summary>App pool of the blocking process, when it is an IIS worker.</summary>
+    public string? BlockerAppPool { get; set; }
+
     public DateTime StartUtc { get; set; }
     public double ElapsedMs { get; set; }
     public double CpuMs { get; set; }
@@ -231,7 +250,8 @@ public sealed class SlowQuery
     public DateTime EndUtc { get; set; }
 
     /// <summary>
-    /// Measured from samples, so the query ran at least this long (at most one sample interval more).
+    /// Exact when SQL Server still reported the request's end time when it was missed; otherwise
+    /// the last sampled elapsed time, so the query ran at least this long.
     /// </summary>
     public double DurationMs { get; set; }
 
@@ -245,22 +265,37 @@ public sealed class SlowQuery
     public string Database { get; set; } = "";
     public string? QueryHash { get; set; }
 
-    /// <summary>Stored procedure, function or trigger the query ran in, as database.schema.name.</summary>
+    /// <summary>
+    /// Stored procedure the app called, as database.schema.name; null for a batch or parameterised
+    /// query (see <see cref="Batch"/>).
+    /// </summary>
     public string? ObjectName { get; set; }
 
     /// <summary>The statement it spent the most time in, with literal values replaced by "?".</summary>
     public string? Statement { get; set; }
 
     /// <summary>
-    /// The whole batch it was part of (literals replaced), when it isn't a stored procedure. Slow
-    /// queries group by procedure or batch, because a multi-statement batch is caught in a
-    /// different statement at each sample.
+    /// Procedure, function or trigger that statement belongs to, when it isn't <see cref="ObjectName"/>
+    /// (a nested procedure, scalar function or trigger).
+    /// </summary>
+    public string? StatementObject { get; set; }
+
+    /// <summary>
+    /// The batch or parameterised query the app sent (literals replaced), when it didn't call a
+    /// stored procedure. Slow queries group by procedure or batch, because a multi-statement batch
+    /// is caught in a different statement at each sample.
     /// </summary>
     public string? Batch { get; set; }
 
-    /// <summary>The wait type seen most often while it ran; null if it was always on CPU.</summary>
+    /// <summary>Where it spent most samples: a wait type, or "CPU" when it was mostly running.</summary>
     public string? MainWait { get; set; }
 
     /// <summary>Whether another session's locks blocked it at some point.</summary>
     public bool WasBlocked { get; set; }
+
+    /// <summary>Process on this server that blocked it most often, if any.</summary>
+    public int? BlockerPid { get; set; }
+
+    /// <summary>App pool of that process, when it is an IIS worker.</summary>
+    public string? BlockerAppPool { get; set; }
 }
