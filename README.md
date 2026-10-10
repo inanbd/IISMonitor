@@ -188,8 +188,10 @@ which client process sent them (`host_process_id`), and maps that process to its
 - **Slow queries**: every query that runs longer than the threshold (**2 seconds** by default,
   *Settings*) is recorded when it finishes, with its app pool, database, duration, CPU, reads,
   main wait and statement, kept with the rest of the history. The list groups runs of the same
-  query and sorts by total time, so the costliest queries come first. Durations come from the
-  samples, so a query ran at least as long as shown, and at most one sample interval longer.
+  stored procedure, or of the same batch (runs that differ only in literal values group
+  together), and sorts by total time, so the costliest come first. For each it shows the
+  statement the longest run spent most of its time in. Durations come from the samples, so a
+  query ran at least as long as shown, and at most one sample interval longer.
 - Statements are stored and shown with literal values replaced by `?`
   (`WHERE Email = 'x@y.com'` → `WHERE Email = ?`), so customer data isn't copied into the history.
 - Charts show database load and blocked queries per app pool for the pools ticked on the

@@ -244,8 +244,19 @@ public sealed class SlowQuery
     public string Login { get; set; } = "";
     public string Database { get; set; } = "";
     public string? QueryHash { get; set; }
+
+    /// <summary>Stored procedure, function or trigger the query ran in, as database.schema.name.</summary>
     public string? ObjectName { get; set; }
+
+    /// <summary>The statement it spent the most time in, with literal values replaced by "?".</summary>
     public string? Statement { get; set; }
+
+    /// <summary>
+    /// The whole batch it was part of (literals replaced), when it isn't a stored procedure. Slow
+    /// queries group by procedure or batch, because a multi-statement batch is caught in a
+    /// different statement at each sample.
+    /// </summary>
+    public string? Batch { get; set; }
 
     /// <summary>The wait type seen most often while it ran; null if it was always on CPU.</summary>
     public string? MainWait { get; set; }

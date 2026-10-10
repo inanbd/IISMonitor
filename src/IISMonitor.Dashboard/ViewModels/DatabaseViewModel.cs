@@ -72,15 +72,19 @@ public sealed class SlowQueryRow(SlowQueryGroup group)
     public string ReadsText => Group.TotalLogicalReads.ToString("N0", CultureInfo.CurrentCulture);
     public string WaitText => Group.MainWait is null ? "CPU" : WaitTypes.Describe(Group.MainWait);
     public string LastSeen => DateTimeOffset.FromUnixTimeMilliseconds(Group.LastSeenUnixMs).LocalDateTime.ToString("g", CultureInfo.CurrentCulture);
-    public string StatementLine => RunningQueryRow.OneLine(Group.ObjectName is null ? Group.Statement : $"{Group.ObjectName}: {Group.Statement}");
+    /// <summary>The procedure, or else the batch, the runs belong to.</summary>
+    public string StatementLine => RunningQueryRow.OneLine(Group.ObjectName ?? Group.Batch ?? Group.Statement);
 
     public string Details => $"""
         App pool: {Pool}    Database: {Group.Database}
         {Group.Count} slow runs · average {AverageText} · longest {MaxText} · {TotalText} in total · CPU {CpuText} · {ReadsText} logical reads
         {(Group.BlockedCount > 0 ? $"Blocked by other sessions in {Group.BlockedCount} of {Group.Count} runs. " : "")}Mostly: {(Group.MainWait is null ? "running on CPU" : $"{WaitTypes.Describe(Group.MainWait)} [{Group.MainWait}]")}
         Last seen: {LastSeen}
-        {(Group.ObjectName is null ? "" : "In: " + Group.ObjectName + Environment.NewLine)}
-        {Group.Statement}
+
+        {(Group.ObjectName is not null ? "Procedure: " + Group.ObjectName : "Batch: " + (Group.Batch ?? Group.Statement))}
+
+        Where the longest run spent most of its time:
+        {(string.IsNullOrEmpty(Group.Statement) ? "(statement text not available)" : Group.Statement)}
         """;
 }
 

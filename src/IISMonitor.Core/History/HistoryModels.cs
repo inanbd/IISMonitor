@@ -55,8 +55,15 @@ public sealed class SlowQueryGroup
 {
     public string AppPool { get; set; } = "";
     public string Database { get; set; } = "";
+    /// <summary>Stored procedure the runs were in, if any.</summary>
     public string? ObjectName { get; set; }
+
+    /// <summary>Whole batch with literals removed, when not a procedure.</summary>
+    public string? Batch { get; set; }
+
+    /// <summary>The statement the longest run spent most of its time in.</summary>
     public string Statement { get; set; } = "";
+
     public int Count { get; set; }
     public double AverageMs { get; set; }
     public double MaxMs { get; set; }

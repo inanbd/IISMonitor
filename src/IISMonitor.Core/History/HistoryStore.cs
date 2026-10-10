@@ -64,6 +64,8 @@ public sealed partial class HistoryStore
                 query_hash TEXT,
                 object_name TEXT,
                 statement TEXT NOT NULL,
+                batch_text TEXT,
+                group_key TEXT,
                 duration_ms REAL NOT NULL,
                 cpu_ms REAL NOT NULL,
                 logical_reads INTEGER NOT NULL,
@@ -73,6 +75,18 @@ public sealed partial class HistoryStore
             );
             CREATE INDEX IF NOT EXISTS ix_slow_queries_end ON slow_queries (end_ts);
             """);
+
+        // Databases from the first version of this table lack the batch and grouping columns.
+        var slowColumns = Columns(connection, "slow_queries");
+        if (!slowColumns.Contains("batch_text"))
+            Execute(connection, "ALTER TABLE slow_queries ADD COLUMN batch_text TEXT;");
+        if (!slowColumns.Contains("group_key"))
+        {
+            Execute(connection, "ALTER TABLE slow_queries ADD COLUMN group_key TEXT;");
+            Execute(connection, "UPDATE slow_queries SET group_key = COALESCE(object_name, statement) WHERE group_key IS NULL;");
+        }
+
+        Execute(connection, "CREATE INDEX IF NOT EXISTS ix_slow_queries_group ON slow_queries (group_key, end_ts);");
 
         foreach (var kind in Enum.GetValues<EntityKind>())
         {
@@ -86,14 +100,7 @@ public sealed partial class HistoryStore
                 CREATE INDEX IF NOT EXISTS ix_{table}_ts ON {table} (ts);
                 """);
 
-            var existing = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            using (var info = connection.CreateCommand())
-            {
-                info.CommandText = $"PRAGMA table_info({table});";
-                using var reader = info.ExecuteReader();
-                while (reader.Read())
-                    existing.Add(reader.GetString(1));
-            }
+            var existing = Columns(connection, table);
 
             foreach (var metric in MetricCatalog.Metrics(kind))
             {
@@ -166,11 +173,13 @@ public sealed partial class HistoryStore
         insert.Transaction = transaction;
         insert.CommandText = """
             INSERT INTO slow_queries (start_ts, end_ts, app_pool, pid, database_name, login_name, program_name, query_hash,
-                                      object_name, statement, duration_ms, cpu_ms, logical_reads, writes, main_wait, was_blocked)
-            VALUES ($start, $end, $pool, $pid, $db, $login, $program, $hash, $object, $statement, $duration, $cpu, $reads, $writes, $wait, $blocked);
+                                      object_name, statement, batch_text, group_key, duration_ms, cpu_ms, logical_reads, writes,
+                                      main_wait, was_blocked)
+            VALUES ($start, $end, $pool, $pid, $db, $login, $program, $hash, $object, $statement, $batch, $group, $duration, $cpu,
+                    $reads, $writes, $wait, $blocked);
             """;
         var p = new Dictionary<string, SqliteParameter>();
-        foreach (var name in new[] { "start", "end", "pool", "pid", "db", "login", "program", "hash", "object", "statement", "duration", "cpu", "reads", "writes", "wait", "blocked" })
+        foreach (var name in new[] { "start", "end", "pool", "pid", "db", "login", "program", "hash", "object", "statement", "batch", "group", "duration", "cpu", "reads", "writes", "wait", "blocked" })
             p[name] = insert.Parameters.Add(new SqliteParameter { ParameterName = "$" + name });
 
         foreach (var q in queries)
@@ -185,6 +194,8 @@ public sealed partial class HistoryStore
             p["hash"].Value = (object?)q.QueryHash ?? DBNull.Value;
             p["object"].Value = (object?)q.ObjectName ?? DBNull.Value;
             p["statement"].Value = q.Statement ?? "";
+            p["batch"].Value = (object?)q.Batch ?? DBNull.Value;
+            p["group"].Value = GroupKey(q);
             p["duration"].Value = q.DurationMs;
             p["cpu"].Value = q.CpuMs;
             p["reads"].Value = q.LogicalReads;
@@ -204,18 +215,22 @@ public sealed partial class HistoryStore
 
         using (var groups = connection.CreateCommand())
         {
-            // The same query shape groups by its query hash; statements without one group by text.
+            // Runs group by procedure or batch (see GroupKey). The statement shown is the one the
+            // longest run spent most of its time in; the wait is the most common main wait.
             groups.CommandText = """
-                SELECT app_pool, database_name, MAX(object_name), MAX(statement), COUNT(*), AVG(duration_ms), MAX(duration_ms),
+                SELECT app_pool, database_name, MAX(object_name), MAX(batch_text), COUNT(*), AVG(duration_ms), MAX(duration_ms),
                        SUM(duration_ms), SUM(cpu_ms), SUM(logical_reads), SUM(was_blocked), MAX(end_ts),
                        (SELECT w.main_wait FROM slow_queries w
-                        WHERE w.app_pool = s.app_pool AND w.database_name = s.database_name
-                          AND COALESCE(w.query_hash, w.statement) = COALESCE(s.query_hash, s.statement)
+                        WHERE w.group_key = s.group_key AND w.app_pool = s.app_pool AND w.database_name = s.database_name
                           AND w.end_ts >= $from AND w.end_ts < $to AND w.main_wait IS NOT NULL
-                        GROUP BY w.main_wait ORDER BY COUNT(*) DESC LIMIT 1)
+                        GROUP BY w.main_wait ORDER BY COUNT(*) DESC LIMIT 1),
+                       (SELECT l.statement FROM slow_queries l
+                        WHERE l.group_key = s.group_key AND l.app_pool = s.app_pool AND l.database_name = s.database_name
+                          AND l.end_ts >= $from AND l.end_ts < $to
+                        ORDER BY l.duration_ms DESC LIMIT 1)
                 FROM slow_queries s
                 WHERE end_ts >= $from AND end_ts < $to AND ($pool IS NULL OR app_pool = $pool)
-                GROUP BY app_pool, database_name, COALESCE(query_hash, statement)
+                GROUP BY app_pool, database_name, group_key
                 ORDER BY SUM(duration_ms) DESC
                 LIMIT $limit;
                 """;
@@ -229,7 +244,8 @@ public sealed partial class HistoryStore
                     AppPool = reader.GetString(0),
                     Database = reader.GetString(1),
                     ObjectName = reader.IsDBNull(2) ? null : reader.GetString(2),
-                    Statement = reader.IsDBNull(3) ? "" : reader.GetString(3),
+                    Batch = reader.IsDBNull(3) ? null : reader.GetString(3),
+                    Statement = reader.IsDBNull(13) ? "" : reader.GetString(13),
                     Count = reader.GetInt32(4),
                     AverageMs = reader.GetDouble(5),
                     MaxMs = reader.GetDouble(6),
@@ -381,6 +397,24 @@ public sealed partial class HistoryStore
         Execute(connection, "PRAGMA synchronous = NORMAL;");
         return connection;
     }
+
+    private static HashSet<string> Columns(SqliteConnection connection, string table)
+    {
+        var columns = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        using var info = connection.CreateCommand();
+        info.CommandText = $"PRAGMA table_info({table});";
+        using var reader = info.ExecuteReader();
+        while (reader.Read())
+            columns.Add(reader.GetString(1));
+        return columns;
+    }
+
+    /// <summary>
+    /// What slow queries group by: the stored procedure, else the whole batch with literals removed
+    /// (so runs that differ only in values group together), else the statement.
+    /// </summary>
+    public static string GroupKey(Models.SlowQuery query) =>
+        query.ObjectName ?? query.Batch ?? query.Statement ?? query.QueryHash ?? "";
 
     private static void Execute(SqliteConnection connection, string sql)
     {

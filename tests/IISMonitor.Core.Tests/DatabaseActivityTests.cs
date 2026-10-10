@@ -104,6 +104,45 @@ public sealed class DatabaseActivityTests : IDisposable
     }
 
     [Fact]
+    public void Accumulator_names_the_statement_a_batch_spent_most_time_in()
+    {
+        var acc = new DbActivityAccumulator(1000);
+        RequestObservation At(double ms, string statementKey) =>
+            Request(51, 100, ms, textKey: statementKey) with { BatchKey = "batch" };
+
+        acc.Add(new DbSample { TimeUtc = T0, Requests = [At(1100, "s1")] });
+        acc.Add(new DbSample { TimeUtc = T0.AddSeconds(1), Requests = [At(2100, "s2")] });
+        acc.Add(new DbSample { TimeUtc = T0.AddSeconds(2), Requests = [At(3100, "s2")] });
+        acc.Add(new DbSample { TimeUtc = T0.AddSeconds(3), Requests = [At(4100, "s3")] });
+        Assert.Contains("batch", acc.PendingTextKeys());
+        acc.Add(new DbSample { TimeUtc = T0.AddSeconds(4) });
+
+        var slow = Assert.Single(acc.Drain(key => key switch
+        {
+            "batch" => ("DECLARE @i int = ?; WHILE ...", null),
+            "s2" => ("SET @i += ?;", null),
+            _ => ("other", null),
+        })!.CompletedSlow);
+        Assert.Equal("SET @i += ?;", slow.Statement);
+        Assert.Equal("DECLARE @i int = ?; WHILE ...", slow.Batch);
+        Assert.Null(slow.ObjectName);
+        Assert.Equal(4100, slow.DurationMs);
+    }
+
+    [Fact]
+    public void Accumulator_names_the_procedure_instead_of_the_batch()
+    {
+        var acc = new DbActivityAccumulator(1000);
+        acc.Add(new DbSample { TimeUtc = T0, Requests = [Request(51, 100, 1500, textKey: "s1") with { BatchKey = "proc" }] });
+        acc.Add(new DbSample { TimeUtc = T0.AddSeconds(1) });
+
+        var slow = Assert.Single(acc.Drain(key => key == "proc" ? ("CREATE PROCEDURE ...", "Shop.dbo.Save") : ("UPDATE t SET a = ?", "Shop.dbo.Save"))!.CompletedSlow);
+        Assert.Equal("Shop.dbo.Save", slow.ObjectName);
+        Assert.Null(slow.Batch);
+        Assert.Equal("UPDATE t SET a = ?", slow.Statement);
+    }
+
+    [Fact]
     public void Accumulator_ignores_idle_listener_waits()
     {
         var acc = new DbActivityAccumulator(2000);
@@ -225,6 +264,66 @@ public sealed class DatabaseActivityTests : IDisposable
 
         Assert.Equal(1, store.Purge(T0.AddDays(-1)));
         Assert.Empty(store.QuerySlowQueries(new SlowQueryRequest { FromUtc = T0.AddDays(-20), ToUtc = T0.AddDays(-5) }).Groups);
+    }
+
+    [Fact]
+    public void Slow_queries_group_by_procedure_or_batch_and_show_the_longest_runs_statement()
+    {
+        var store = new HistoryStore(Path.Combine(_directory, "grouping.db"));
+        store.Initialize();
+        SlowQuery Run(double ms, string statement, string? batch = null, string? procedure = null) => new()
+        {
+            StartUtc = T0, EndUtc = T0.AddMilliseconds(ms), DurationMs = ms, AppPool = "Shop", Database = "Shop",
+            Statement = statement, Batch = batch, ObjectName = procedure, Pid = 1,
+        };
+
+        store.WriteSlowQueries(
+        [
+            Run(3000, "SET @i += ?", batch: "DECLARE ...; WHILE ..."),
+            Run(5000, "WHILE ...", batch: "DECLARE ...; WHILE ..."),
+            Run(2500, "UPDATE a", procedure: "Shop.dbo.Save"),
+            Run(4500, "SELECT b", procedure: "Shop.dbo.Save"),
+        ]);
+
+        var groups = store.QuerySlowQueries(new SlowQueryRequest { FromUtc = T0.AddMinutes(-1), ToUtc = T0.AddMinutes(1) }).Groups;
+
+        Assert.Equal(2, groups.Count);
+        var batch = groups.Single(g => g.Batch is not null);
+        Assert.Equal(2, batch.Count);
+        Assert.Equal("WHILE ...", batch.Statement);
+        var procedure = groups.Single(g => g.ObjectName == "Shop.dbo.Save");
+        Assert.Equal(2, procedure.Count);
+        Assert.Equal("SELECT b", procedure.Statement);
+        Assert.Null(procedure.Batch);
+    }
+
+    [Fact]
+    public void Slow_query_table_from_the_first_version_is_upgraded()
+    {
+        var path = Path.Combine(_directory, "old.db");
+        Directory.CreateDirectory(_directory);
+        using (var connection = new Microsoft.Data.Sqlite.SqliteConnection($"Data Source={path}"))
+        {
+            connection.Open();
+            using var create = connection.CreateCommand();
+            create.CommandText = """
+                CREATE TABLE slow_queries (id INTEGER PRIMARY KEY AUTOINCREMENT, start_ts INTEGER NOT NULL, end_ts INTEGER NOT NULL,
+                    app_pool TEXT NOT NULL, pid INTEGER NOT NULL, database_name TEXT NOT NULL, login_name TEXT NOT NULL,
+                    program_name TEXT NOT NULL, query_hash TEXT, object_name TEXT, statement TEXT NOT NULL, duration_ms REAL NOT NULL,
+                    cpu_ms REAL NOT NULL, logical_reads INTEGER NOT NULL, writes INTEGER NOT NULL, main_wait TEXT, was_blocked INTEGER NOT NULL);
+                INSERT INTO slow_queries (start_ts, end_ts, app_pool, pid, database_name, login_name, program_name, statement,
+                    duration_ms, cpu_ms, logical_reads, writes, was_blocked)
+                VALUES (1000, 4000, 'Shop', 1, 'Shop', 'web', 'app', 'SELECT ?', 3000, 10, 5, 0, 0);
+                """;
+            create.ExecuteNonQuery();
+        }
+
+        var store = new HistoryStore(path);
+        store.Initialize();
+        store.WriteSlowQueries([new SlowQuery { StartUtc = T0, EndUtc = T0.AddSeconds(3), DurationMs = 3000, AppPool = "Shop", Database = "Shop", Statement = "SELECT ?", Batch = "SELECT ?" }]);
+
+        var report = store.QuerySlowQueries(new SlowQueryRequest { FromUtc = DateTimeOffset.FromUnixTimeMilliseconds(0).UtcDateTime, ToUtc = T0.AddHours(1) });
+        Assert.Equal(2, Assert.Single(report.Groups).Count);
     }
 
     [Fact]

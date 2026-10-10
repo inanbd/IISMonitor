@@ -21,7 +21,8 @@ public readonly record struct RequestObservation(
     bool IsLocal,
     int Pid,
     string Program,
-    string Login);
+    string Login,
+    string? BatchKey = null);
 
 /// <summary>A session opened by a process on this server (sys.dm_exec_sessions).</summary>
 public readonly record struct SessionObservation(int SessionId, int Pid, string Status, int OpenTransactions);
@@ -189,11 +190,14 @@ public sealed class DbActivityAccumulator(double slowThresholdMs)
                 })
                 .ToList();
 
+            // Completed slow queries carry text keys in Statement and Batch until resolved here.
             var completed = _completed.Select(q =>
             {
-                var (statement, objectName) = describe(q.Statement);
+                var (statement, statementObject) = describe(q.Statement);
+                var (batch, batchObject) = describe(q.Batch);
                 q.Statement = statement;
-                q.ObjectName = objectName;
+                q.ObjectName = batchObject ?? statementObject;
+                q.Batch = q.ObjectName is null ? batch : null;
                 return q;
             }).ToList();
 
@@ -215,17 +219,14 @@ public sealed class DbActivityAccumulator(double slowThresholdMs)
         }
     }
 
-    /// <summary>Text keys of slow or listed requests whose statement text is still needed.</summary>
+    /// <summary>Text keys (statements and whole batches) of slow or listed requests whose text is still needed.</summary>
     public IReadOnlyList<string> PendingTextKeys()
     {
         lock (_gate)
         {
             var keys = new HashSet<string>();
             foreach (var flight in _inFlight.Values)
-            {
-                if (flight.TextKey is { } key)
-                    keys.Add(key);
-            }
+                keys.UnionWith(flight.TextKeys);
 
             if (_latest is { } latest)
             {
@@ -246,10 +247,15 @@ public sealed class DbActivityAccumulator(double slowThresholdMs)
     private sealed class InFlight
     {
         private readonly Dictionary<string, int> _waits = new(StringComparer.OrdinalIgnoreCase);
+
+        // A batch or procedure moves through several statements while it runs; count where it is
+        // seen, so the record names the statement it spent the most time in.
+        private readonly Dictionary<string, int> _statements = [];
         private RequestObservation _last;
         private bool _blocked;
 
-        public string? TextKey => _last.TextKey;
+        public IEnumerable<string> TextKeys =>
+            _statements.Keys.Concat(_last.BatchKey is { } batch ? [batch] : []);
 
         public void Observe(RequestObservation r)
         {
@@ -258,7 +264,14 @@ public sealed class DbActivityAccumulator(double slowThresholdMs)
                 _blocked = true;
             if (!string.IsNullOrEmpty(r.WaitType) && !IsOnCpu(r))
                 _waits[r.WaitType] = _waits.GetValueOrDefault(r.WaitType) + 1;
+            if (r.TextKey is { } key)
+                _statements[key] = _statements.GetValueOrDefault(key) + 1;
         }
+
+        private string? MainStatementKey =>
+            _statements.Count == 0
+                ? _last.TextKey
+                : _statements.OrderByDescending(kv => kv.Value).ThenBy(kv => kv.Key == _last.TextKey ? 0 : 1).First().Key;
 
         public SlowQuery ToSlowQuery() => new()
         {
@@ -273,8 +286,9 @@ public sealed class DbActivityAccumulator(double slowThresholdMs)
             Login = _last.Login,
             Database = _last.Database,
             QueryHash = _last.QueryHash,
-            // Holds the text key until Drain resolves it into the statement.
-            Statement = _last.TextKey,
+            // Hold text keys until Drain resolves them into text.
+            Statement = MainStatementKey,
+            Batch = _last.BatchKey,
             MainWait = _waits.Count == 0 ? null : _waits.MaxBy(kv => kv.Value).Key,
             WasBlocked = _blocked,
         };

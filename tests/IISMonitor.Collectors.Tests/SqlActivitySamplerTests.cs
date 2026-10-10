@@ -84,20 +84,74 @@ public class SqlActivitySamplerTests
 
             var running = collected.SelectMany(c => c.Running).Where(r => r.Pid == Environment.ProcessId).ToList();
             Assert.Contains(running, r => r.BlockedBy is not null && r.WaitType is { } w && w.StartsWith("LCK_", StringComparison.Ordinal));
-            Assert.Contains(running, r => r.Statement is { } s && s.Contains("WHILE", StringComparison.Ordinal));
+            // The live list shows whichever statement of the loop batch is executing at that second.
+            Assert.Contains(running, r => r.Statement is { } s
+                                          && (s.Contains("WHILE", StringComparison.Ordinal) || s.Contains("SET @", StringComparison.Ordinal)));
 
             var slow = collected.SelectMany(c => c.CompletedSlow).Where(q => q.Pid == Environment.ProcessId).ToList();
-            var heavyQuery = Assert.Single(slow, q => q.Statement is { } s && s.Contains("WHILE", StringComparison.Ordinal));
+
+            // The loop batch is recorded once, as its whole batch, whichever statement each sample caught.
+            var heavyQuery = Assert.Single(slow, q => q.Batch is { } b && b.Contains("WHILE", StringComparison.Ordinal));
             Assert.InRange(heavyQuery.DurationMs, 1500, 4000);
             Assert.True(heavyQuery.CpuMs > 500);
-            Assert.DoesNotContain("secret-literal", heavyQuery.Statement);
+            Assert.Null(heavyQuery.ObjectName);
+            Assert.False(string.IsNullOrEmpty(heavyQuery.Statement));
+            Assert.Contains(heavyQuery.Statement!.TrimEnd(';'), heavyQuery.Batch!);
+            Assert.DoesNotContain("secret-literal", heavyQuery.Batch);
             Assert.Contains(slow, q => q.WasBlocked && q.MainWait is { } w && w.StartsWith("LCK_", StringComparison.Ordinal)
-                                       && q.Statement is { } s && !s.Contains("carol", StringComparison.Ordinal));
+                                       && q.Batch is { } b && b.Contains("SELECT", StringComparison.Ordinal)
+                                       && !b.Contains("carol", StringComparison.Ordinal));
+            Assert.Equal(2, slow.Count);
             Assert.All(slow, q => Assert.False(string.IsNullOrEmpty(q.Database)));
         }
         finally
         {
             await ExecuteAsync($"DROP TABLE IF EXISTS dbo.{table};");
+        }
+    }
+
+    [SqlFact]
+    public async Task Names_the_stored_procedure_a_slow_query_ran_in()
+    {
+        var procedure = "iismon_slow_" + Guid.NewGuid().ToString("N")[..8];
+        await ExecuteAsync($"""
+            CREATE PROCEDURE dbo.{procedure} AS
+            BEGIN
+                DECLARE @i bigint = 0; DECLARE @end datetime2 = DATEADD(millisecond, 2500, SYSDATETIME());
+                WHILE SYSDATETIME() < @end SET @i += 1;
+                SELECT @i;
+            END
+            """);
+        try
+        {
+            await using var sampler = new SqlActivitySampler([ConnectionString], TimeSpan.FromSeconds(1), slowThresholdMs: 1000);
+            await using var connection = new SqlConnection(ConnectionString);
+            await connection.OpenAsync();
+            var run = new SqlCommand($"dbo.{procedure}", connection) { CommandType = System.Data.CommandType.StoredProcedure, CommandTimeout = 30 }
+                .ExecuteScalarAsync();
+            var collected = new List<DbActivityInput>();
+            while (!run.IsCompleted)
+            {
+                await Task.Delay(500);
+                if (sampler.Drain() is { } input)
+                    collected.Add(input);
+            }
+
+            for (var i = 0; i < 4; i++)
+            {
+                await Task.Delay(500);
+                if (sampler.Drain() is { } input)
+                    collected.Add(input);
+            }
+
+            var slow = Assert.Single(collected.SelectMany(c => c.CompletedSlow), q => q.Pid == Environment.ProcessId);
+            Assert.Equal($"tempdb.dbo.{procedure}", slow.ObjectName);
+            Assert.Null(slow.Batch);
+            Assert.False(string.IsNullOrEmpty(slow.Statement));
+        }
+        finally
+        {
+            await ExecuteAsync($"DROP PROCEDURE IF EXISTS dbo.{procedure};");
         }
     }
 

@@ -160,7 +160,9 @@ internal sealed class SqlActivitySampler : IAsyncDisposable
                 IsLocal: string.Equals(hostName, Environment.MachineName, StringComparison.OrdinalIgnoreCase),
                 Pid: reader.IsDBNull(17) ? 0 : Convert.ToInt32(reader.GetValue(17)),
                 Program: reader.IsDBNull(18) ? "" : reader.GetString(18),
-                Login: reader.IsDBNull(19) ? "" : reader.GetString(19)));
+                Login: reader.IsDBNull(19) ? "" : reader.GetString(19),
+                // The whole batch: offset 0 to the end.
+                BatchKey: handle is null ? null : TextKey(serverIndex, handle, 0, -1)));
         }
 
         await reader.NextResultAsync(token).ConfigureAwait(false);
