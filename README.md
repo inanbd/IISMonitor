@@ -160,22 +160,28 @@ You can also run `IISMonitor.exe` without installing the service. It then collec
 ## Database tab
 
 Shows which app pool is loading SQL Server, and with which queries. It needs one connection
-string per SQL Server under *Settings*, with a login that has `VIEW SERVER STATE`; nothing is
-installed on the SQL Server and no trace is started. For a SQL Server on the IIS server, with the
-service running as LocalSystem:
+string per SQL Server under *Settings* (SQL Server connections, *SQL Server activity* box), with a
+login that has `VIEW SERVER STATE` (on SQL Server 2022 and later, `VIEW SERVER PERFORMANCE STATE`
+is enough); nothing is installed on the SQL Server and no trace is started. For a SQL Server on the
+IIS server, with the service running as LocalSystem, run this once:
 
 ```sql
+USE master;
 IF SUSER_ID(N'NT AUTHORITY\SYSTEM') IS NULL CREATE LOGIN [NT AUTHORITY\SYSTEM] FROM WINDOWS;
 GRANT VIEW SERVER STATE TO [NT AUTHORITY\SYSTEM];
 ```
 
-and the connection string `Server=.;Integrated Security=true;TrustServerCertificate=true`.
+and the connection string `Server=.;Integrated Security=true;TrustServerCertificate=true`. The
+Database tab keeps these steps under *How to give IIS Monitor access to SQL Server*, and shows a
+warning there when SQL Server can't be reached or the permission is missing.
 
-Every second (*Settings*, 1–10 s) the service asks SQL Server which queries are running and
-which client process sent them (`host_process_id`), and maps that process to its app pool:
+Every second (*Settings*, "Ask SQL Server every", 1–10 s) the service asks SQL Server which queries
+are running and which client process sent them (`host_process_id`), and maps that process to its
+app pool:
 
 - **DB load**: the average number of the pool's queries running at once. 1.00 means one query
-  busy all the time; it is split into *on CPU* and *waiting*. Sampling every second makes this
+  busy all the time; it is split into *on CPU* and *waiting*. The grid ranks pools by the average
+  over the last minute and also shows the latest value (*now*). Sampling every second makes this
   accurate over a minute or so even for queries of a few milliseconds. SQL Server's own
   per-session totals can't be used for this: they only update when a query finishes and reset
   every time a pooled connection is reused, which is constantly in a web app.
@@ -184,16 +190,22 @@ which client process sent them (`host_process_id`), and maps that process to its
   hold a transaction open while doing nothing, a common cause of blocking.
 - **Running now**: every query from this server running at that moment, longest first, with
   what it is doing (on CPU, waiting for a lock, reading from disk, waiting for the app to read
-  results…) and who blocks it.
+  results…) and who blocks it, with the blocker's app pool.
 - **Slow queries**: every query that runs longer than the threshold (**2 seconds** by default,
   *Settings*) is recorded when it finishes, with its app pool, database, duration, CPU, reads,
-  main wait and statement, kept with the rest of the history. The list groups runs of the same
-  stored procedure, or of the same batch (runs that differ only in literal values group
-  together), and sorts by total time, so the costliest come first. For each it shows the
-  statement the longest run spent most of its time in. Durations come from the samples, so a
-  query ran at least as long as shown, and at most one sample interval longer.
+  main wait (or CPU), the app pool that blocked it if any, and its statement, kept with the rest
+  of the history. Each is named after what the app sent: the stored procedure it called, or the
+  batch or parameterised query (runs that differ only in literal values group together), even
+  when the time went into a nested procedure, function or trigger. The list groups runs by that
+  and sorts by total time, so the costliest come first. For each it shows the statement, and the
+  module, the longest run spent most of its time in.
+- Slow-query timing: queries are watched from one sample interval before the threshold, and
+  sampled once more right when they reach it. When a query ends between samples, its exact
+  duration is taken from SQL Server's record of the session's last request, so queries just
+  over the threshold aren't missed.
 - Statements are stored and shown with literal values replaced by `?`
-  (`WHERE Email = 'x@y.com'` → `WHERE Email = ?`), so customer data isn't copied into the history.
+  (`WHERE Email = 'x@y.com'` → `WHERE Email = ?`, double-quoted values too), so customer data
+  isn't copied into the history.
 - Charts show database load and blocked queries per app pool for the pools ticked on the
   Overview tab. The App pools grid also has a **DB load** column, and pool history keeps DB
   load, blocking and slow-query counts.
@@ -208,7 +220,8 @@ which client process sent them (`host_process_id`), and maps that process to its
   When the app creates that folder, it restricts access to Administrators and SYSTEM, because the
   settings can contain SQL Server connection strings. Prefer `Integrated Security=true`: the service
   runs as LocalSystem and signs in to a local SQL Server as `NT AUTHORITY\SYSTEM` and to a remote
-  one as the computer account (`DOMAIN\SERVER$`). That login needs `VIEW SERVER STATE`.
+  one as the computer account (`DOMAIN\SERVER$`). That login needs `VIEW SERVER STATE` (or, on
+  SQL Server 2022 and later, `VIEW SERVER PERFORMANCE STATE`).
 - Slow-query statements are kept without literal values, in the same history database.
 - The dashboard talks to the service over a local named pipe that only Administrators and
   SYSTEM can open. Nothing listens on the network.

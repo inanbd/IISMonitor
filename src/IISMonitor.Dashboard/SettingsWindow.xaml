@@ -72,14 +72,21 @@
                 <TextBox x:Name="SqlConnectionStrings" AcceptsReturn="True" Height="70" VerticalScrollBarVisibility="Auto"
                          FontFamily="Consolas" TextWrapping="NoWrap" HorizontalScrollBarVisibility="Auto" />
                 <TextBlock Style="{StaticResource Hint}"
-                           Text="Example: Server=.;Integrated Security=true;TrustServerCertificate=true. The login needs VIEW SERVER STATE (the Database tab shows the one-line grant). The service runs as LocalSystem: for a local SQL Server it signs in as NT AUTHORITY\SYSTEM, for a remote one as the computer account (DOMAIN\SERVERNAME$)." />
+                           Text="Example: Server=.;Integrated Security=true;TrustServerCertificate=true. The login needs VIEW SERVER STATE (the Database tab shows the grant under &quot;How to give IIS Monitor access&quot;). The service runs as LocalSystem: for a local SQL Server it signs in as NT AUTHORITY\SYSTEM, for a remote one as the computer account (DOMAIN\SERVERNAME$)." />
                 <Grid Margin="0,4,0,0">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="200" />
                         <ColumnDefinition Width="*" />
                     </Grid.ColumnDefinitions>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
                     <TextBlock Text="Slow query: longer than (seconds)" Style="{StaticResource Label}" />
                     <TextBox x:Name="SlowThreshold" Grid.Column="1" Width="80" HorizontalAlignment="Left" />
+                    <TextBlock Grid.Row="1" Text="Ask SQL Server every (seconds)" Style="{StaticResource Label}" />
+                    <TextBox x:Name="SqlInterval" Grid.Row="1" Grid.Column="1" Width="80" HorizontalAlignment="Left" Margin="0,4,0,0"
+                             ToolTip="1 to 10. Each sample is one light query to SQL Server; 1 second gives the steadiest database load." />
                 </Grid>
             </StackPanel>
         </GroupBox>

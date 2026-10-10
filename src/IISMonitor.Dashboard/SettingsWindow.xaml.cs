@@ -34,6 +34,7 @@ public partial class SettingsWindow : Window
         DetectLocalSql.IsChecked = settings.DetectLocalSqlServerPorts;
         SqlConnectionStrings.Text = string.Join(Environment.NewLine, settings.SqlServerConnectionStrings);
         SlowThreshold.Text = settings.SlowQueryThresholdSeconds.ToString("0.##", CultureInfo.CurrentCulture);
+        SqlInterval.Text = settings.SqlActivityIntervalSeconds.ToString(CultureInfo.CurrentCulture);
         KernelTracing.IsChecked = settings.EnableKernelTracing;
         ResponseTracing.IsChecked = settings.EnableResponseTimeTracing;
         StandaloneNote.Visibility = standalone ? Visibility.Visible : Visibility.Collapsed;
@@ -54,6 +55,13 @@ public partial class SettingsWindow : Window
             || slowSeconds < 0.5 || slowSeconds > 3600)
         {
             ShowError("Slow query: enter a number of seconds from 0.5 to 3600.");
+            return;
+        }
+
+        if (!int.TryParse(SqlInterval.Text.Trim(), NumberStyles.Integer, CultureInfo.CurrentCulture, out var sqlSeconds)
+            || sqlSeconds < 1 || sqlSeconds > 10)
+        {
+            ShowError("Ask SQL Server every: enter a whole number of seconds from 1 to 10.");
             return;
         }
 
@@ -79,6 +87,7 @@ public partial class SettingsWindow : Window
             .Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
             .ToList();
         result.SlowQueryThresholdSeconds = slowSeconds;
+        result.SqlActivityIntervalSeconds = sqlSeconds;
         result.EnableKernelTracing = KernelTracing.IsChecked == true;
         result.EnableResponseTimeTracing = ResponseTracing.IsChecked == true;
 

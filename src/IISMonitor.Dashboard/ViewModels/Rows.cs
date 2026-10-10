@@ -51,9 +51,9 @@ public sealed class AppPoolRow : ObservableObject
         ? MetricFormatter.Missing
         : $"{Metrics.DbSessions} ({Metrics.DbActiveSessions ?? 0} active)";
 
-    /// <summary>Average number of the pool's queries running in SQL Server.</summary>
-    public double DbLoad => Metrics.DbLoad ?? -1;
-    public string DbLoadText => Metrics.DbLoad is { } load ? load.ToString("0.00", System.Globalization.CultureInfo.CurrentCulture) : MetricFormatter.Missing;
+    /// <summary>Average number of the pool's queries running in SQL Server over the last minute (steady enough to compare pools).</summary>
+    public double DbLoad => Metrics.DbLoad1m ?? Metrics.DbLoad ?? -1;
+    public string DbLoadText => (Metrics.DbLoad1m ?? Metrics.DbLoad) is { } load ? load.ToString("0.00", System.Globalization.CultureInfo.CurrentCulture) : MetricFormatter.Missing;
 
     public double RequestsPerSec => Metrics.RequestsPerSec ?? -1;
     public string RequestsText => MetricFormatter.Format(MetricUnit.PerSecond, Metrics.RequestsPerSec);
