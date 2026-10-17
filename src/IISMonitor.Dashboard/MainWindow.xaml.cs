@@ -25,6 +25,9 @@ public partial class MainWindow : Window
 
         OverviewCharts.SetCharts(OverviewViewModel.Charts);
         DatabaseCharts.SetCharts(DatabaseViewModel.Charts);
+        RequestCharts.SetCharts([MetricCatalog.RequestKindChart]);
+        _viewModel.Requests.AskBlock = ip => BlockIpWindow.Ask(this, ip);
+        _viewModel.Requests.AskLoggingSetup = sites => IisLoggingWindow.Ask(this, sites);
         PoolCharts.SetCharts(MetricCatalog.Charts(EntityKind.AppPool));
         SiteCharts.SetCharts(MetricCatalog.Charts(EntityKind.Site));
         ServerCharts.SetCharts(MetricCatalog.Charts(EntityKind.Server));
@@ -40,11 +43,14 @@ public partial class MainWindow : Window
         if (!ReferenceEquals(e.OriginalSource, Tabs))
             return;
         _viewModel.IsDatabaseTabVisible = ReferenceEquals(Tabs.SelectedItem, DatabaseTab);
+        _viewModel.IsRequestsTabVisible = ReferenceEquals(Tabs.SelectedItem, RequestsTab);
         RenderLiveCharts();
         if (ReferenceEquals(Tabs.SelectedItem, HistoryTab))
             _ = _viewModel.History.ReloadEntitiesAsync();
         if (_viewModel.IsDatabaseTabVisible)
             _ = _viewModel.Database.RefreshSlowAsync(force: true);
+        if (_viewModel.IsRequestsTabVisible)
+            _ = _viewModel.Requests.RefreshAsync(force: true, blocks: true);
     }
 
     /// <summary>Only the visible tab's charts are drawn.</summary>
@@ -65,6 +71,8 @@ public partial class MainWindow : Window
             DatabaseCharts.EmptyText = _viewModel.Overview.EmptyText;
             DatabaseCharts.Render(_viewModel.OverviewSeries, _viewModel.LiveRange(), _viewModel.OverviewTitle);
         }
+        else if (ReferenceEquals(tab, RequestsTab))
+            Render(RequestCharts, EntityKind.Server, "");
         else if (ReferenceEquals(tab, ServerTab))
             Render(ServerCharts, EntityKind.Server, "");
     }
@@ -96,6 +104,9 @@ public partial class MainWindow : Window
         var dialog = new SettingsWindow(backend.Settings.Clone(), backend.IsStandalone) { Owner = this };
         if (dialog.ShowDialog() != true || dialog.Result is not { } settings)
             return;
+
+        // The blacklist is edited on the Requests tab: leave it as the collector has it.
+        settings.Blocking = null;
 
         _ = SaveAsync();
 

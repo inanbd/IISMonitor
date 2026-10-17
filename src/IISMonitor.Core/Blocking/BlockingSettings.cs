@@ -24,7 +24,10 @@ public sealed class BlockRule
 
     public bool Enabled { get; set; } = true;
 
-    /// <summary>URL path pattern, case-insensitive: "*" matches anything (including "/"), "?" one character.</summary>
+    /// <summary>
+    /// URL path patterns, separated by ";", case-insensitive: "*" matches anything (including "/"),
+    /// "?" one character. A request to any of them counts as a hit.
+    /// </summary>
     public string Pattern { get; set; } = "";
 
     public int Hits { get; set; } = 3;
@@ -39,16 +42,14 @@ public sealed class BlockRule
 
     public BlockRule Normalize()
     {
-        var pattern = (Pattern ?? "").Trim();
-        if (pattern.Length > 0 && pattern[0] != '/' && pattern[0] != '*')
-            pattern = "/" + pattern;
+        var pattern = UrlPattern.Join(UrlPattern.Split(Pattern));
         return new BlockRule
         {
             Id = string.IsNullOrWhiteSpace(Id) ? Guid.NewGuid().ToString("N") : Id.Trim(),
             Name = string.IsNullOrWhiteSpace(Name) ? pattern : Name.Trim(),
             // A pattern that would catch ordinary visitors is kept for editing but never enforced.
             Enabled = Enabled && !UrlPattern.IsTooBroad(pattern),
-            Pattern = pattern.Length > 500 ? pattern[..500] : pattern,
+            Pattern = pattern.Length > 4000 ? pattern[..4000] : pattern,
             Hits = Math.Clamp(Hits, 1, 100_000),
             WithinMinutes = double.IsFinite(WithinMinutes) ? Math.Clamp(WithinMinutes, 0.1, 7 * 24 * 60) : 10,
             BlockHours = double.IsFinite(BlockHours) ? Math.Clamp(BlockHours, 0, 24 * 365) : 24,
@@ -61,6 +62,23 @@ public sealed class BlockRule
 public sealed class BlockingSettings
 {
     public const int MaxRules = 200;
+
+    /// <summary>
+    /// A starting point for sites that don't use PHP, WordPress or these tools: paths that only
+    /// vulnerability scanners ask for. Review before saving.
+    /// </summary>
+    public static BlockRule ScannerRule() => new()
+    {
+        Name = "Common scanner paths",
+        Pattern = UrlPattern.Join([
+            "/wp-login.php", "/xmlrpc.php", "/wp-admin/*", "/wp-includes/*", "/wp-content/plugins/*", "/.env", "*/.env",
+            "/.git/*", "/.aws/*", "/phpmyadmin/*", "/pma/*", "/cgi-bin/*", "/vendor/phpunit/*", "/actuator/*", "/boaform/*",
+            "/HNAP1*",
+        ]),
+        Hits = 3,
+        WithinMinutes = 10,
+        BlockHours = 24,
+    };
 
     public BlockingMode Mode { get; set; } = BlockingMode.Off;
 

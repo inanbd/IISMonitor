@@ -1,30 +1,56 @@
 namespace IISMonitor.Core.Blocking;
 
 /// <summary>
-/// A URL path pattern: case-insensitive, "*" matches any run of characters (including "/"), "?"
-/// matches one character, everything else matches itself. "/wp-login.php", "/.git/*", "*.env".
+/// URL path patterns, separated by ";": case-insensitive, "*" matches any run of characters
+/// (including "/"), "?" matches one character, everything else matches itself.
+/// "/wp-login.php; /.git/*; *.env".
 /// </summary>
 public sealed class UrlPattern
 {
-    private readonly string _pattern;
+    private readonly string[] _patterns;
 
     public UrlPattern(string pattern)
     {
-        _pattern = pattern ?? "";
+        Text = pattern ?? "";
+        _patterns = Split(Text).ToArray();
     }
 
-    public string Text => _pattern;
+    public string Text { get; }
 
-    public bool IsMatch(ReadOnlySpan<char> path) => Match(_pattern, path);
+    public bool IsMatch(ReadOnlySpan<char> path)
+    {
+        foreach (var pattern in _patterns)
+        {
+            if (Match(pattern, path))
+                return true;
+        }
+
+        return false;
+    }
+
+    /// <summary>The patterns, trimmed, each starting with "/" unless it starts with "*".</summary>
+    public static IEnumerable<string> Split(string? text) =>
+        (text ?? "").Split([';', '\n', '\r'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Select(p => p[0] is '/' or '*' ? p : "/" + p);
+
+    /// <summary>Joins patterns the way <see cref="Split"/> reads them.</summary>
+    public static string Join(IEnumerable<string> patterns) => string.Join("; ", patterns);
 
     /// <summary>
-    /// Patterns that would catch ordinary visitors: ones matching the home page, or with fewer than
-    /// three literal characters ("*", "/*", "*.js" is allowed but "/*/" is not).
+    /// Patterns that would catch ordinary visitors: no pattern at all, or one that matches the home
+    /// page, or has fewer than three literal characters ("*", "/*", "/a*"). "*.php" is allowed.
     /// </summary>
-    public static bool IsTooBroad(string? pattern)
+    public static bool IsTooBroad(string? text)
     {
-        if (string.IsNullOrWhiteSpace(pattern))
-            return true;
+        var patterns = Split(text).ToList();
+        return patterns.Count == 0 || patterns.Any(IsTooBroadOne);
+    }
+
+    /// <summary>The patterns of <paramref name="text"/> that are too broad, for the editor to point out.</summary>
+    public static IReadOnlyList<string> TooBroad(string? text) => Split(text).Where(IsTooBroadOne).ToList();
+
+    private static bool IsTooBroadOne(string pattern)
+    {
         var literal = pattern.Count(c => c is not ('*' or '?' or '/'));
         return literal < 3 || Match(pattern, "/") || Match(pattern, "/index.html") || Match(pattern, "/default.aspx");
     }

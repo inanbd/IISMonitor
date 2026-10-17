@@ -31,6 +31,7 @@ Target platforms: **Windows Server 2022 and 2025** (IIS 10), x64.
 | Database load, blocking, slow queries | app pool | *Optional.* Every second, the running requests in `sys.dm_exec_requests`, matched to app pools by client PID (see [Database tab](#database-tab)) |
 | SQL Server CPU and memory | server | The local `sqlservr.exe` process |
 | Response time avg / p95 / max, 4xx and 5xx/sec | site and app pool | IIS sends each finished request to ETW (the `Microsoft-Windows-IIS-Logging` provider), including `time-taken` |
+| Every request: client IP, method, kind, URL, status, time, size, user agent | request, IP | The same ETW events, with the client IP, method, bytes sent, user agent and substatus fields, and optionally request and response headers as custom log fields (see [Requests tab](#requests-tab)) |
 | Server CPU and memory | server | `GetSystemTimes`, `GlobalMemoryStatusEx` |
 
 ### Things worth knowing
@@ -144,6 +145,8 @@ You can also run `IISMonitor.exe` without installing the service. It then collec
   process count.
 - **Sites**: connections, requests/sec, bandwidth, response time (avg / p95 / max) and 4xx/5xx
   per site, with live charts.
+- **Requests**: every request from every IP, filtered by method and kind, the IPs sending the
+  most, blocked IPs and the auto blacklist rules (see below).
 - **Database**: which app pools keep SQL Server busy, what they are running right now and
   their slow queries (see below).
 - **Server**: whole-machine CPU and memory, plus the local SQL Server process.
@@ -214,6 +217,90 @@ app pool:
 - A query is matched to this server only if its client reports this computer's name as host name
   (the default); connection strings that set `Workstation ID` show up as "other servers".
 
+## Requests tab
+
+Lists every request IIS finishes, from any IP, as it happens. It needs IIS logging set up for
+it, once: **Set up IIS logging…** on the tab (it asks before changing `applicationHost.config`):
+
+- **Request details, all sites**: log entries go to ETW (log files are still written) with the
+  client IP, method, bytes sent, user agent and substatus fields. Cheap, and needed for
+  everything below.
+- **Header fields, per site** (optional): `X-Requested-With`, `Sec-Fetch-Dest`,
+  `Sec-Fetch-Mode` and the response's `Content-Type` and `Content-Disposition`, for accurate
+  request kinds, and `X-Forwarded-For`, to see (and block) visitors behind a reverse proxy, load
+  balancer or CDN. These are IIS custom log fields: IIS then turns off kernel-mode caching for
+  that site, which costs some CPU on sites serving a lot of static files, and log file names get
+  an `_x` suffix. IIS Monitor's `X-Forwarded-For` field is kept last on purpose; if another
+  field is added after it, the tab says so and **Set up IIS logging** puts it back.
+
+The tab shows:
+
+- **Filters**: method (GET / POST / other) and kind, each with checkboxes, plus an IP box (an
+  address, a network such as `203.0.113.0/24`, or its start such as `203.0.`), part of the URL,
+  and a site. Kinds:
+  - *Page view*: a page a browser navigated to.
+  - *XHR / API*: `fetch()` and XMLHttpRequest calls, JSON and other API responses, `/api/`
+    paths, WebSockets and SignalR.
+  - *Static content*: CSS, JavaScript, images, fonts, audio and video.
+  - *Download*: files the browser saves (`Content-Disposition: attachment`, PDF, ZIP, Office
+    documents, installers...).
+  - *Other*: robots.txt, CORS preflights, scanner probes and anything else.
+  Kinds come from the browser's `Sec-Fetch-*` headers and the response's content type when
+  header fields are logged (browsers send `Sec-Fetch-*` to HTTPS sites only), otherwise from the
+  method, status and URL (extension, `/api/` and similar).
+- **Requests per second by kind** (chart; also on the Server tab and in history).
+- **Requests**: the newest requests that match (the service keeps the last 20,000). For a
+  visitor behind a trusted proxy it shows the visitor and the proxy. Requests to a blacklist
+  rule's URLs are red. **Freeze list** stops it moving while you read it; from a selected row you
+  can show only that IP, block it, or make a rule from its URL.
+- **Top IPs**: per IP over the last 5 minutes, hour or day: requests matching the filters, and
+  page views, XHR/API, static, downloads, GET, POST, 4xx/5xx, rule hits, last URL and user agent,
+  and whether it is blocked.
+- **Blocked IPs** and **Blacklist rules**: see below.
+
+## Auto blacklist
+
+Rules on the **Requests** tab, **Blacklist rules**: when an IP requests URLs that match a
+rule's patterns **X times within N minutes**, it is blocked for the rule's block length (24
+hours by default, 0 for until lifted). For example, three requests within 10 minutes to
+`/wp-login.php; /xmlrpc.php; /.env; /.git/*` on a site that has none of them.
+
+- Patterns are URL paths, case-insensitive, several separated by `;`: `*` matches anything,
+  `?` one character (`/wp-login.php`, `/.git/*`, `*.env`). A rule can be limited to some sites.
+  Patterns that would catch ordinary visitors (`/*`, anything matching the home page) are
+  refused. **Add common scanner paths** adds one rule listing paths only vulnerability scanners
+  ask for (WordPress, `.env`, `.git`, phpMyAdmin, …); use it only if your sites serve none of
+  them.
+- **Mode**: *Off*; *Watch only*, which lists the IPs a rule would block without blocking them,
+  to try rules out; or *Block*.
+- **How IPs are blocked**: a visitor that connects directly is blocked with a **Windows
+  Firewall** rule (group "IIS Monitor", up to 1,000 addresses per rule): all its traffic is
+  dropped, on every port, and its open IPv4 connections are closed. A visitor that comes through
+  a **trusted proxy** is blocked with **IIS IP restrictions** in proxy mode (IIS also checks
+  `X-Forwarded-For`), which needs the *IP and Domain Restrictions* role service
+  (`Install-WindowsFeature Web-IP-Security`). Each IIS change rewrites `applicationHost.config`,
+  which restarts ASP.NET Core apps on the server, so IIS changes are batched (at most once a
+  minute by default; set it in the rules editor). IIS Monitor never removes or changes entries it
+  didn't add.
+- **Never blocked**: loopback, this server's addresses, the **allow-list** (addresses and
+  networks you enter) and the **trusted proxies**. Requests IIS already turned away
+  (403.503 and similar) don't count again.
+- **Trusted proxies**: enter your load balancers', reverse proxies' or CDN's addresses or ranges.
+  For their requests, the visitor is the right-most address in `X-Forwarded-For` that isn't a
+  trusted proxy (so a client can't name someone else), which needs the header fields logged on
+  those sites. `X-Forwarded-For` from anyone else is ignored.
+- **Blocked IPs** lists current blocks (and, if you like, lifted and expired ones) with why,
+  how, since when and until when. **Block an IP…** blocks one by hand; **Unblock** lifts a
+  block at once. Blocks are kept in the history database, survive restarts and expire even
+  while the service is stopped.
+- Blocking is done by the Windows service. In standalone mode the dashboard shows requests but
+  doesn't block.
+- What it can't see: requests HTTP.sys rejects before IIS (bad host names, malformed requests;
+  they are in the HTTPERR log), and events ETW drops under extreme load (shown on the tab).
+- Not yet verified on a real server: which `X-Forwarded-For` entry IIS IP restrictions match
+  in proxy mode (Microsoft doesn't document it for static entries), and the exact format of
+  IIS's custom-field ETW data with several fields. Try a rule in *Watch only* mode first.
+
 ## Data and security
 
 - Settings: `%ProgramData%\IISMonitor\settings.json`. History: `%ProgramData%\IISMonitor\history.db`.
@@ -223,6 +310,9 @@ app pool:
   one as the computer account (`DOMAIN\SERVER$`). That login needs `VIEW SERVER STATE` (or, on
   SQL Server 2022 and later, `VIEW SERVER PERFORMANCE STATE`).
 - Slow-query statements are kept without literal values, in the same history database.
+- The request log, Top IPs and blacklist hit counts are kept in the service's memory only. URL
+  query strings are not logged. Blocks are kept in `history.db`; lifted and expired ones are
+  deleted with the rest of the history.
 - The dashboard talks to the service over a local named pipe that only Administrators and
   SYSTEM can open. Nothing listens on the network.
 - History size: about 60,000 rows per app pool or site per week at 10-second resolution.
@@ -240,6 +330,9 @@ app pool:
 | DB connections are 0 but the app uses SQL Server | The SQL Server may listen on a non-default port (add it in Settings), or the app may use shared memory/named pipes to a local SQL Server (add a session connection string). |
 | Dashboard says "Standalone mode" | The service isn't running. Use **Start the service**, or check the Application event log. |
 | Empty performance counter columns | Rebuild counters with `lodctr /R` from an elevated prompt, then restart the service. |
+| Requests tab lists no client IPs or methods | Use **Set up IIS logging…** on the Requests tab; sites created later need it again. |
+| Visitors behind a proxy show as "unknown (via …)" | Add the proxy to *Trusted proxies* and log header fields on that site (**Set up IIS logging…**). |
+| Blocks show "Not blocked: …" | The message says why: the firewall is off for the active profile or Group Policy ignores local rules, or the IIS IP and Domain Restrictions role service is missing. Blocks are retried every minute. |
 
 ## Status
 

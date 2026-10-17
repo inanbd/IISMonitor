@@ -1,6 +1,7 @@
 using System.Net;
 using IISMonitor.Core.Blocking;
 using IISMonitor.Core.Collection;
+using IISMonitor.Core.Presentation;
 using IISMonitor.Core.Requests;
 using IISMonitor.Core.Settings;
 
@@ -52,6 +53,24 @@ public sealed class BlacklistTests : IDisposable
     [InlineData("/a*b*c", "/aXXbYY", false)]
     public void Url_patterns_are_case_insensitive_globs(string pattern, string path, bool expected) =>
         Assert.Equal(expected, new UrlPattern(pattern).IsMatch(path));
+
+    [Fact]
+    public void A_rule_can_list_several_patterns()
+    {
+        var pattern = new UrlPattern("wp-login.php; /.git/* ;*.env");
+        Assert.True(pattern.IsMatch("/WP-LOGIN.PHP"));
+        Assert.True(pattern.IsMatch("/.git/HEAD"));
+        Assert.True(pattern.IsMatch("/api/.env"));
+        Assert.False(pattern.IsMatch("/"));
+        Assert.Equal("/wp-login.php; /.git/*; *.env", new BlockRule { Pattern = "wp-login.php; /.git/* ;*.env" }.Normalize().Pattern);
+        Assert.Equal(["/*"], UrlPattern.TooBroad("/.env; /*"));
+        Assert.False(new BlockRule { Pattern = "/.env; /*" }.Normalize().Enabled);
+
+        var scanner = BlockingSettings.ScannerRule().Normalize();
+        Assert.True(scanner.Enabled);
+        Assert.True(new UrlPattern(scanner.Pattern).IsMatch("/vendor/phpunit/phpunit/src/Util/PHP/eval-stdin.php"));
+        Assert.False(new UrlPattern(scanner.Pattern).IsMatch("/products/42"));
+    }
 
     [Theory]
     [InlineData("*")]
@@ -216,5 +235,45 @@ public sealed class BlacklistTests : IDisposable
 
         // Settings without a blacklist (an older dashboard) normalize to "off", not to an error.
         Assert.Equal(BlockingMode.Off, new MonitorSettings { Blocking = null }.Normalize().Blocking!.Mode);
+    }
+}
+
+public class RequestsPresentationTests
+{
+    [Fact]
+    public void Block_entries_read_well()
+    {
+        var now = new DateTime(2026, 10, 17, 12, 0, 0, DateTimeKind.Utc);
+        var entry = new BlockEntry { Ip = "203.0.113.9", Method = BlockMethod.Iis, State = BlockState.Pending, ExpiresUtc = now.AddMinutes(30) };
+        Assert.Equal("Waiting for the next IIS update", RequestsPresentation.State(entry));
+        Assert.Equal("in 30 min", RequestsPresentation.Expires(entry, now));
+        entry.ExpiresUtc = now.AddHours(23.6);
+        Assert.Equal("in 24 h", RequestsPresentation.Expires(entry, now));
+        entry.ExpiresUtc = null;
+        Assert.Equal("never (until lifted)", RequestsPresentation.Expires(entry, now));
+        entry.State = BlockState.Failed;
+        entry.Message = "IIS: locked";
+        Assert.Equal("Not blocked: IIS: locked", RequestsPresentation.State(entry));
+        Assert.Equal("198.51.100.7 (via 10.0.0.5)", RequestsPresentation.Client(new RequestRecord { ClientIp = "198.51.100.7", PeerIp = "10.0.0.5", ViaProxy = true }));
+        Assert.Equal("unknown (via 10.0.0.5)", RequestsPresentation.Client(new RequestRecord { PeerIp = "10.0.0.5", ViaProxy = true }));
+    }
+
+    [Fact]
+    public void Drafts_with_bad_networks_or_broad_patterns_are_refused()
+    {
+        var (errors, warnings) = RequestsPresentation.Validate(new BlockingSettings
+        {
+            Mode = BlockingMode.Block,
+            AllowList = ["office"],
+            TrustedProxies = ["10.0.0.0/8"],
+            Rules = [new BlockRule { Name = "All", Pattern = "/*", Hits = 1 }, new BlockRule { Name = "Env", Pattern = "/.env", Hits = 1 }],
+        });
+        Assert.Equal(2, errors.Count);
+        Assert.Contains(errors, e => e.Contains("\"office\""));
+        Assert.Contains(errors, e => e.StartsWith("All:"));
+        Assert.Contains(warnings, w => w.StartsWith("Env:"));
+
+        var ok = RequestsPresentation.Validate(new BlockingSettings { Mode = BlockingMode.Watch, Rules = [BlockingSettings.ScannerRule()] });
+        Assert.Empty(ok.Errors);
     }
 }

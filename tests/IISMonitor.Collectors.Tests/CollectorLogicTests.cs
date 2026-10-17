@@ -91,3 +91,41 @@ public class CollectorLogicTests
         Assert.Equal(expected, IisLoggingConfig.Flags(value, names));
     }
 }
+
+public class BlockingCollectorTests
+{
+    [Theory]
+    [InlineData("1.2.3.4", "1.2.3.4")]
+    [InlineData("1.2.3.4/255.255.255.255", "1.2.3.4")]
+    [InlineData("10.0.0.0/255.0.0.0", "10.0.0.0/8")]
+    [InlineData("::ffff:1.2.3.4", "1.2.3.4")]
+    [InlineData("2001:db8::1/128", "2001:db8::1")]
+    [InlineData("1.2.3.4-1.2.3.9", "1.2.3.4-1.2.3.9")]
+    public void Firewall_address_tokens_are_canonical(string token, string expected)
+    {
+        Assert.True(IISMonitor.Collectors.Blocking.FirewallBlocker.TryCanonicalize(token, out var canonical));
+        Assert.Equal(expected, canonical);
+    }
+
+    [Theory]
+    [InlineData("*")]
+    [InlineData("LocalSubnet")]
+    [InlineData("")]
+    [InlineData("1.2.3.4/33")]
+    public void Firewall_keywords_and_wildcards_are_not_addresses(string token) =>
+        Assert.False(IISMonitor.Collectors.Blocking.FirewallBlocker.TryCanonicalize(token, out _));
+
+    [Fact]
+    public void Iis_entries_compare_by_value_whatever_the_mask_spelling()
+    {
+        Assert.True(IISMonitor.Collectors.Blocking.IpBlockKey.TryFromConfig("203.0.113.5", "", out var plain));
+        Assert.True(IISMonitor.Collectors.Blocking.IpBlockKey.TryFromConfig("203.0.113.5", "255.255.255.255", out var dotted));
+        Assert.True(IISMonitor.Collectors.Blocking.IpBlockKey.TryFromConfig("203.0.113.5", "32", out var prefix));
+        Assert.Equal(plain, dotted);
+        Assert.Equal(plain, prefix);
+        Assert.Null(plain.ConfigMask);
+        Assert.Equal("128", IISMonitor.Collectors.Blocking.IpBlockKey.Single(System.Net.IPAddress.Parse("2001:db8::1")).ConfigMask);
+        Assert.True(IISMonitor.Collectors.Blocking.IpBlockKey.TryFromConfig("10.0.0.0", "255.0.0.0", out var network));
+        Assert.True(network.Overlaps(plain) == false && network.Overlaps(IISMonitor.Collectors.Blocking.IpBlockKey.Single(System.Net.IPAddress.Parse("10.9.8.7"))));
+    }
+}

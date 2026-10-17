@@ -272,6 +272,266 @@
                 </Grid>
             </TabItem>
 
+            <!-- Requests: every request from every IP, top IPs, the auto blacklist -->
+            <TabItem x:Name="RequestsTab" Header="Requests" DataContext="{Binding Requests}">
+                <DockPanel>
+                    <Border DockPanel.Dock="Top" Background="{StaticResource WarningBrush}" BorderBrush="{StaticResource WarningBorderBrush}"
+                            BorderThickness="1" Padding="8,6" Margin="0,4,0,0"
+                            Visibility="{Binding ServiceOutdated, Converter={StaticResource BoolToVisibility}}">
+                        <TextBlock TextWrapping="Wrap"
+                                   Text="The IIS Monitor service is older than this dashboard, so it doesn't keep a request log or run the blacklist. Run install-service.cmd from this version's folder to update it." />
+                    </Border>
+                    <Border DockPanel.Dock="Top" Background="{StaticResource InfoBrush}" BorderBrush="#B9CCE0" BorderThickness="1" Padding="8,6" Margin="0,4,0,0"
+                            Visibility="{Binding NeedsLoggingSetup, Converter={StaticResource BoolToVisibility}}">
+                        <DockPanel>
+                            <Button DockPanel.Dock="Right" Content="Set up IIS logging…" Command="{Binding SetupLoggingCommand}" />
+                            <TextBlock TextWrapping="Wrap" VerticalAlignment="Center"
+                                       Text="Some sites don't log the client IP, method and user agent yet, so their requests show without them and the blacklist can't see who sent them." />
+                        </DockPanel>
+                    </Border>
+
+                    <!-- Status -->
+                    <DockPanel DockPanel.Dock="Top" Margin="0,6,0,0">
+                        <Button DockPanel.Dock="Right" Content="IIS logging…" Command="{Binding SetupLoggingCommand}" />
+                        <StackPanel>
+                            <TextBlock Text="{Binding LoggingStatus}" TextWrapping="Wrap" Foreground="{StaticResource MutedBrush}" />
+                            <TextBlock Text="{Binding BlockingStatus}" TextWrapping="Wrap">
+                                <TextBlock.Style>
+                                    <Style TargetType="TextBlock">
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding BlockingProblem}" Value="True">
+                                                <Setter Property="Foreground" Value="{StaticResource BadBrush}" />
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </TextBlock.Style>
+                            </TextBlock>
+                        </StackPanel>
+                    </DockPanel>
+
+                    <!-- Filters -->
+                    <WrapPanel DockPanel.Dock="Top" Margin="0,6,0,0">
+                        <TextBlock Text="Method" FontWeight="SemiBold" VerticalAlignment="Center" Margin="0,0,6,0" />
+                        <ItemsControl ItemsSource="{Binding MethodToggles}" VerticalAlignment="Center">
+                            <ItemsControl.ItemsPanel>
+                                <ItemsPanelTemplate><StackPanel Orientation="Horizontal" /></ItemsPanelTemplate>
+                            </ItemsControl.ItemsPanel>
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate><CheckBox Content="{Binding Label}" IsChecked="{Binding IsChecked}" Margin="0,0,10,0" /></DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                        <TextBlock Text="Kind" FontWeight="SemiBold" VerticalAlignment="Center" Margin="12,0,6,0" />
+                        <ItemsControl ItemsSource="{Binding KindToggles}" VerticalAlignment="Center">
+                            <ItemsControl.ItemsPanel>
+                                <ItemsPanelTemplate><StackPanel Orientation="Horizontal" /></ItemsPanelTemplate>
+                            </ItemsControl.ItemsPanel>
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate><CheckBox Content="{Binding Label}" IsChecked="{Binding IsChecked}" Margin="0,0,10,0" /></DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </WrapPanel>
+                    <WrapPanel DockPanel.Dock="Top" Margin="0,6,0,0">
+                        <TextBlock Text="IP" VerticalAlignment="Center" Margin="0,0,4,0" />
+                        <TextBox Text="{Binding IpFilter, UpdateSourceTrigger=PropertyChanged, Delay=400}" Width="170" VerticalContentAlignment="Center"
+                                 ToolTip="An address (203.0.113.5), a network (203.0.113.0/24) or its start (203.0.). Empty: any IP." />
+                        <TextBlock Text="URL contains" VerticalAlignment="Center" Margin="12,0,4,0" />
+                        <TextBox Text="{Binding PathFilter, UpdateSourceTrigger=PropertyChanged, Delay=400}" Width="200" VerticalContentAlignment="Center" />
+                        <TextBlock Text="Site" VerticalAlignment="Center" Margin="12,0,0,0" />
+                        <ComboBox ItemsSource="{Binding Sites}" SelectedItem="{Binding SelectedSite}" DisplayMemberPath="Name" MinWidth="160" />
+                        <Button Content="Clear filters" Command="{Binding ClearFiltersCommand}" />
+                        <Button Content="Refresh" Command="{Binding RefreshCommand}" />
+                    </WrapPanel>
+
+                    <Grid Margin="0,4,0,0">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="1*" MinHeight="110" />
+                            <RowDefinition Height="3*" MinHeight="200" />
+                        </Grid.RowDefinitions>
+
+                        <controls:ChartPanel x:Name="RequestCharts" ChartHeight="170" MaxColumns="1" />
+
+                        <TabControl Grid.Row="1" Margin="0,4,0,0">
+                            <TabItem Header="Requests">
+                                <DockPanel>
+                                    <DockPanel DockPanel.Dock="Top" Margin="0,4">
+                                        <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                                            <CheckBox Content="Freeze list" IsChecked="{Binding FreezeList}" VerticalAlignment="Center" Margin="0,0,8,0" />
+                                            <Button Content="Show only this IP" Command="{Binding ShowIpCommand}" />
+                                            <Button Content="Block this IP…" Command="{Binding BlockSelectedCommand}" />
+                                            <Button Content="Make a rule from this URL" Command="{Binding RuleFromRequestCommand}" />
+                                        </StackPanel>
+                                        <TextBlock Text="{Binding Summary}" VerticalAlignment="Center" Foreground="{StaticResource MutedBrush}" TextTrimming="CharacterEllipsis" />
+                                    </DockPanel>
+                                    <DataGrid ItemsSource="{Binding Requests}" SelectedItem="{Binding SelectedRequest}">
+                                        <DataGrid.Columns>
+                                            <DataGridTextColumn Header="Time" Binding="{Binding TimeText}" SortMemberPath="Time" Width="70" ElementStyle="{StaticResource TextCell}" />
+                                            <DataGridTextColumn Header="Client IP" Binding="{Binding Client}" Width="170" ElementStyle="{StaticResource TextCell}" />
+                                            <DataGridTextColumn Header="Site" Binding="{Binding Record.Site}" Width="120" ElementStyle="{StaticResource TextCell}" />
+                                            <DataGridTextColumn Header="Method" Binding="{Binding Record.Method}" Width="60" ElementStyle="{StaticResource TextCell}" />
+                                            <DataGridTextColumn Header="Kind" Binding="{Binding Kind}" Width="100" ElementStyle="{StaticResource TextCell}" />
+                                            <DataGridTextColumn Header="Status" Binding="{Binding Status}" SortMemberPath="Record.Status" Width="60" ElementStyle="{StaticResource NumberCell}" />
+                                            <DataGridTextColumn Header="Time taken" Binding="{Binding TimeTakenText}" SortMemberPath="Record.TimeTakenMs" Width="80" ElementStyle="{StaticResource NumberCell}" />
+                                            <DataGridTextColumn Header="Sent" Binding="{Binding BytesText}" SortMemberPath="Bytes" Width="75" ElementStyle="{StaticResource NumberCell}" />
+                                            <DataGridTextColumn Header="URL" Binding="{Binding Record.Path}" Width="2*" ElementStyle="{StaticResource TextCell}" />
+                                            <DataGridTextColumn Header="Rule" Binding="{Binding Record.Rule}" Width="110" ElementStyle="{StaticResource TextCell}" />
+                                            <DataGridTextColumn Header="User agent" Binding="{Binding Record.UserAgent}" Width="*" ElementStyle="{StaticResource TextCell}" />
+                                        </DataGrid.Columns>
+                                        <DataGrid.RowStyle>
+                                            <Style TargetType="DataGridRow">
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding IsError}" Value="True">
+                                                        <Setter Property="Foreground" Value="#9A3A00" />
+                                                    </DataTrigger>
+                                                    <DataTrigger Binding="{Binding HitsRule}" Value="True">
+                                                        <Setter Property="Foreground" Value="{StaticResource BadBrush}" />
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </DataGrid.RowStyle>
+                                    </DataGrid>
+                                </DockPanel>
+                            </TabItem>
+
+                            <TabItem Header="Top IPs">
+                                <DockPanel>
+                                    <DockPanel DockPanel.Dock="Top" Margin="0,4">
+                                        <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                                            <ComboBox ItemsSource="{Binding Windows}" SelectedItem="{Binding SelectedWindow}" DisplayMemberPath="Label" />
+                                            <Button Content="Show this IP's requests" Command="{Binding ShowIpCommand}" />
+                                            <Button Content="Block this IP…" Command="{Binding BlockSelectedCommand}" />
+                                        </StackPanel>
+                                        <TextBlock Text="{Binding TopSummary}" VerticalAlignment="Center" Foreground="{StaticResource MutedBrush}" TextTrimming="CharacterEllipsis" />
+                                    </DockPanel>
+                                    <DataGrid ItemsSource="{Binding TopIps}" SelectedItem="{Binding SelectedTopIp}">
+                                        <DataGrid.Columns>
+                                            <DataGridTextColumn Header="IP" Binding="{Binding Ip}" Width="190" ElementStyle="{StaticResource TextCell}" />
+                                            <DataGridTextColumn Header="Matching" Binding="{Binding Row.Matching}" Width="70" ElementStyle="{StaticResource NumberCell}" />
+                                            <DataGridTextColumn Header="All" Binding="{Binding Row.Total}" Width="60" ElementStyle="{StaticResource NumberCell}" />
+                                            <DataGridTextColumn Header="Pages" Binding="{Binding Row.Pages}" Width="60" ElementStyle="{StaticResource NumberCell}" />
+                                            <DataGridTextColumn Header="XHR/API" Binding="{Binding Row.Api}" Width="65" ElementStyle="{StaticResource NumberCell}" />
+                                            <DataGridTextColumn Header="Static" Binding="{Binding Row.Static}" Width="60" ElementStyle="{StaticResource NumberCell}" />
+                                            <DataGridTextColumn Header="Downloads" Binding="{Binding Row.Downloads}" Width="75" ElementStyle="{StaticResource NumberCell}" />
+                                            <DataGridTextColumn Header="GET" Binding="{Binding Row.Get}" Width="55" ElementStyle="{StaticResource NumberCell}" />
+                                            <DataGridTextColumn Header="POST" Binding="{Binding Row.Post}" Width="55" ElementStyle="{StaticResource NumberCell}" />
+                                            <DataGridTextColumn Header="4xx / 5xx" Binding="{Binding Errors}" SortMemberPath="ErrorCount" Width="70" ElementStyle="{StaticResource NumberCell}" />
+                                            <DataGridTextColumn Header="Rule hits" Binding="{Binding Row.RuleHits}" Width="65" ElementStyle="{StaticResource NumberCell}" />
+                                            <DataGridTextColumn Header="Blocked" Binding="{Binding Blocked}" Width="120" ElementStyle="{StaticResource TextCell}" />
+                                            <DataGridTextColumn Header="Last seen" Binding="{Binding LastSeen}" SortMemberPath="Row.LastSeenUtc" Width="70" ElementStyle="{StaticResource TextCell}" />
+                                            <DataGridTextColumn Header="Last URL" Binding="{Binding Row.LastPath}" Width="*" ElementStyle="{StaticResource TextCell}" />
+                                            <DataGridTextColumn Header="User agent" Binding="{Binding Row.LastUserAgent}" Width="*" ElementStyle="{StaticResource TextCell}" />
+                                        </DataGrid.Columns>
+                                    </DataGrid>
+                                </DockPanel>
+                            </TabItem>
+
+                            <TabItem Header="Blocked IPs">
+                                <DockPanel>
+                                    <DockPanel DockPanel.Dock="Top" Margin="0,4">
+                                        <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                                            <CheckBox Content="Show lifted and expired" IsChecked="{Binding ShowEndedBlocks}" VerticalAlignment="Center" Margin="0,0,8,0" />
+                                            <Button Content="Block an IP…" Command="{Binding BlockIpCommand}" />
+                                            <Button Content="Unblock" Command="{Binding UnblockSelectedCommand}" />
+                                        </StackPanel>
+                                        <TextBlock VerticalAlignment="Center" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap"
+                                                   Text="Direct visitors are blocked in the Windows Firewall (every port). Visitors behind a trusted proxy are blocked in IIS." />
+                                    </DockPanel>
+                                    <DataGrid ItemsSource="{Binding Blocks}" SelectedItem="{Binding SelectedBlock}">
+                                        <DataGrid.Columns>
+                                            <DataGridTextColumn Header="IP" Binding="{Binding Entry.Ip}" Width="160" ElementStyle="{StaticResource TextCell}" />
+                                            <DataGridTextColumn Header="State" Binding="{Binding State}" Width="220" ElementStyle="{StaticResource TextCell}" />
+                                            <DataGridTextColumn Header="How" Binding="{Binding How}" Width="90" ElementStyle="{StaticResource TextCell}" />
+                                            <DataGridTextColumn Header="Why" Binding="{Binding Why}" Width="200" ElementStyle="{StaticResource TextCell}" />
+                                            <DataGridTextColumn Header="Since" Binding="{Binding Since}" SortMemberPath="Created" Width="120" ElementStyle="{StaticResource TextCell}" />
+                                            <DataGridTextColumn Header="Ends" Binding="{Binding Expires}" Width="130" ElementStyle="{StaticResource TextCell}" />
+                                            <DataGridTextColumn Header="Site" Binding="{Binding Entry.Site}" Width="110" ElementStyle="{StaticResource TextCell}" />
+                                            <DataGridTextColumn Header="URL" Binding="{Binding Entry.Path}" Width="*" ElementStyle="{StaticResource TextCell}" />
+                                        </DataGrid.Columns>
+                                        <DataGrid.RowStyle>
+                                            <Style TargetType="DataGridRow">
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding IsProblem}" Value="True">
+                                                        <Setter Property="Foreground" Value="{StaticResource BadBrush}" />
+                                                    </DataTrigger>
+                                                    <DataTrigger Binding="{Binding IsCurrent}" Value="False">
+                                                        <Setter Property="Foreground" Value="{StaticResource MutedBrush}" />
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </DataGrid.RowStyle>
+                                    </DataGrid>
+                                </DockPanel>
+                            </TabItem>
+
+                            <TabItem Header="Blacklist rules">
+                                <Grid Margin="0,4,0,0">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="3*" />
+                                        <ColumnDefinition Width="12" />
+                                        <ColumnDefinition Width="1.2*" MinWidth="240" />
+                                    </Grid.ColumnDefinitions>
+                                    <DockPanel>
+                                        <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="0,0,0,4">
+                                            <TextBlock Text="Mode" VerticalAlignment="Center" FontWeight="SemiBold" />
+                                            <ComboBox ItemsSource="{Binding Modes}" SelectedItem="{Binding SelectedMode}" DisplayMemberPath="Label" MinWidth="230" />
+                                            <Button Content="Add rule" Command="{Binding AddRuleCommand}" />
+                                            <Button Content="Add common scanner paths" Command="{Binding AddScannerRuleCommand}"
+                                                    ToolTip="One rule listing paths that only vulnerability scanners request (WordPress, .env, .git, phpMyAdmin...). Only use it if your sites don't serve these." />
+                                            <Button Content="Remove rule" Command="{Binding RemoveRuleCommand}" />
+                                        </StackPanel>
+                                        <TextBlock DockPanel.Dock="Top" TextWrapping="Wrap" Foreground="{StaticResource MutedBrush}" Margin="0,0,0,4"
+                                                   Text="An IP that requests URLs matching a rule's patterns that many times within the window is blocked for the block length (0 = until lifted). Patterns: separate several with ';', * matches anything, ? one character, e.g. /wp-login.php; /.git/*; *.env. Sites: comma-separated site names, empty for all." />
+                                        <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,6,0,0">
+                                            <Button Content="Revert" Command="{Binding RevertRulesCommand}" />
+                                            <Button Content="Save" Command="{Binding SaveRulesCommand}" MinWidth="80" />
+                                        </StackPanel>
+                                        <TextBlock DockPanel.Dock="Bottom" Text="{Binding EditorMessages}" TextWrapping="Wrap" Foreground="{StaticResource BadBrush}" Margin="0,4,0,0" />
+                                        <DataGrid ItemsSource="{Binding Rules}" SelectedItem="{Binding SelectedRule}" IsReadOnly="False"
+                                                  CanUserAddRows="False" CanUserDeleteRows="False" RowHeight="NaN">
+                                            <DataGrid.Columns>
+                                                <DataGridCheckBoxColumn Header="On" Binding="{Binding Enabled, UpdateSourceTrigger=PropertyChanged}" Width="40" />
+                                                <DataGridTextColumn Header="Name" Binding="{Binding Name}" Width="150" />
+                                                <DataGridTextColumn Header="URL patterns" Binding="{Binding Pattern}" Width="*">
+                                                    <DataGridTextColumn.ElementStyle>
+                                                        <Style TargetType="TextBlock">
+                                                            <Setter Property="TextWrapping" Value="Wrap" />
+                                                            <Setter Property="Margin" Value="4,2" />
+                                                        </Style>
+                                                    </DataGridTextColumn.ElementStyle>
+                                                </DataGridTextColumn>
+                                                <DataGridTextColumn Header="Hits" Binding="{Binding Hits}" Width="50" />
+                                                <DataGridTextColumn Header="Within (min)" Binding="{Binding WithinMinutes}" Width="85" />
+                                                <DataGridTextColumn Header="Block (hours)" Binding="{Binding BlockHours}" Width="90" />
+                                                <DataGridTextColumn Header="Sites" Binding="{Binding Sites}" Width="120" />
+                                            </DataGrid.Columns>
+                                        </DataGrid>
+                                    </DockPanel>
+
+                                    <ScrollViewer Grid.Column="2" VerticalScrollBarVisibility="Auto">
+                                        <StackPanel>
+                                            <TextBlock Text="Never block (allow-list)" FontWeight="SemiBold" />
+                                            <TextBlock TextWrapping="Wrap" Foreground="{StaticResource MutedBrush}" FontSize="11"
+                                                       Text="One address or network per line: your office, monitoring, partners. Loopback and this server are always allowed." />
+                                            <TextBox Text="{Binding AllowListText, UpdateSourceTrigger=PropertyChanged}" AcceptsReturn="True" Height="90"
+                                                     VerticalScrollBarVisibility="Auto" FontFamily="Consolas" Margin="0,4,0,10" />
+                                            <TextBlock Text="Trusted proxies" FontWeight="SemiBold" />
+                                            <TextBlock TextWrapping="Wrap" Foreground="{StaticResource MutedBrush}" FontSize="11"
+                                                       Text="Load balancers, reverse proxies and CDN ranges in front of IIS. For their requests the visitor is read from X-Forwarded-For (log header fields on those sites) and blocked in IIS. They are never blocked themselves." />
+                                            <TextBox Text="{Binding TrustedProxiesText, UpdateSourceTrigger=PropertyChanged}" AcceptsReturn="True" Height="90"
+                                                     VerticalScrollBarVisibility="Auto" FontFamily="Consolas" Margin="0,4,0,10" />
+                                            <TextBlock Text="Write IIS changes at most every (seconds)" FontWeight="SemiBold" />
+                                            <TextBlock TextWrapping="Wrap" Foreground="{StaticResource MutedBrush}" FontSize="11"
+                                                       Text="Each change to IIS IP restrictions rewrites applicationHost.config, which restarts ASP.NET Core apps on the server. Changes are batched; firewall blocks are immediate." />
+                                            <TextBox Text="{Binding IisIntervalText, UpdateSourceTrigger=PropertyChanged}" Width="80" HorizontalAlignment="Left" Margin="0,4,0,10" />
+                                            <CheckBox Content="Close a blocked IP's open connections (IPv4)" IsChecked="{Binding DropOpenConnections}" />
+                                        </StackPanel>
+                                    </ScrollViewer>
+                                </Grid>
+                            </TabItem>
+                        </TabControl>
+                    </Grid>
+                </DockPanel>
+            </TabItem>
+
             <!-- Database: which app pools keep SQL Server busy, and slow queries -->
             <TabItem x:Name="DatabaseTab" Header="Database">
                 <DockPanel>

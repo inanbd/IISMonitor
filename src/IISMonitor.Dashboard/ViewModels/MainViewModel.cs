@@ -76,6 +76,10 @@ public sealed class MainViewModel : ObservableObject, IAsyncDisposable
         Overview = new OverviewViewModel(new DashboardPreferencesStore(DashboardPreferencesStore.DefaultPath));
         Overview.SelectionChanged += (_, _) => LiveChartsInvalidated?.Invoke(this, EventArgs.Empty);
         Database = new DatabaseViewModel(() => _backend, ReportError);
+        Requests = new RequestsViewModel(() => _backend, ReportError, SaveSettingsAsync)
+        {
+            ShowMessage = (title, message, isError) => ShowMessage(title, message, isError),
+        };
         StartServiceCommand = new AsyncCommand(StartServiceAsync, ReportError, () => CanStartService);
         EnableResponseTimesCommand = new AsyncCommand(EnableResponseTimesAsync, ReportError, () => _backend is not null);
         TogglePauseCommand = new RelayCommand(() => IsPaused = !IsPaused);
@@ -99,9 +103,13 @@ public sealed class MainViewModel : ObservableObject, IAsyncDisposable
     public HistoryViewModel History { get; }
     public OverviewViewModel Overview { get; }
     public DatabaseViewModel Database { get; }
+    public RequestsViewModel Requests { get; }
 
     /// <summary>Set by the window: the Database tab is showing (its slow-query list refreshes only then).</summary>
     public bool IsDatabaseTabVisible { get; set; }
+
+    /// <summary>Set by the window: the Requests tab is showing (its lists refresh only then).</summary>
+    public bool IsRequestsTabVisible { get; set; }
 
     public IReadOnlyList<IntervalOption> IntervalOptions { get; }
     public IReadOnlyList<WindowOption> WindowOptions { get; }
@@ -341,6 +349,8 @@ public sealed class MainViewModel : ObservableObject, IAsyncDisposable
         MachineName = snapshot.Server.MachineName;
         Overview.Sync(snapshot.AppPools);
         Database.Apply(snapshot, _backend?.Settings.SqlServerConnectionStrings.Count > 0, IsDatabaseTabVisible);
+        Requests.SetSites(snapshot.Sites);
+        Requests.Apply(snapshot, IsRequestsTabVisible);
         Sync(Pools, snapshot.AppPools, p => p.Name, name => new AppPoolRow(name), (row, m) => row.Update(m));
         Sync(Sites, snapshot.Sites, s => s.Name, name => new SiteRow(name), (row, m) => row.Update(m));
         RefreshSelectedPool();
@@ -462,6 +472,7 @@ public sealed class MainViewModel : ObservableObject, IAsyncDisposable
 
     private void OnSettingsChanged(MonitorSettings settings)
     {
+        Requests.LoadEditor(settings);
         _syncingSettings = true;
         try
         {
@@ -488,6 +499,8 @@ public sealed class MainViewModel : ObservableObject, IAsyncDisposable
         {
             var settings = backend.Settings.Clone();
             settings.SampleIntervalMs = milliseconds;
+            // Leave the blacklist as the collector has it (it may have been edited elsewhere).
+            settings.Blocking = null;
             OnSettingsChanged(await backend.UpdateSettingsAsync(settings));
         }
         catch (Exception e)
