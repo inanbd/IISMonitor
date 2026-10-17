@@ -78,6 +78,9 @@ internal sealed class IisConfigReader
                         : defaultPool))
                     .ToList(),
                 EtwLoggingEnabled = !centralBinary && IisLoggingConfig.IsEtwReady(site, siteDefaultsLog, centralW3C),
+                RequestFieldsEnabled = !centralBinary && IisLoggingConfig.AreRequestFieldsReady(site, siteDefaultsLog, centralW3C),
+                // Central W3C logging has no custom fields.
+                Layout = centralW3C is null ? IisLoggingConfig.ReadLayout(site) : Core.Requests.CustomFieldLayout.None,
             });
         }
 

@@ -58,6 +58,19 @@ public sealed class SnapshotComposer(string machineName, int processorCount)
 
         if (input.DbActivity is { } db)
             snapshot.Database = ComposeDatabase(db, members, pools);
+
+        if (input.Requests is { } requests)
+        {
+            snapshot.Requests = requests;
+            double Rate(Requests.RequestKind kind) => requests.PerSecondByKind.GetValueOrDefault(kind);
+            snapshot.Server.PageViewsPerSec = Rate(Requests.RequestKind.PageView);
+            snapshot.Server.ApiRequestsPerSec = Rate(Requests.RequestKind.XhrApi);
+            snapshot.Server.StaticRequestsPerSec = Rate(Requests.RequestKind.Static);
+            snapshot.Server.DownloadsPerSec = Rate(Requests.RequestKind.Download);
+            snapshot.Server.OtherRequestsPerSec = Rate(Requests.RequestKind.Other);
+        }
+
+        snapshot.Blocking = input.Blocking;
         return snapshot;
     }
 
@@ -354,6 +367,9 @@ public sealed class SnapshotComposer(string machineName, int processorCount)
                 AppPool = site.RootAppPool,
                 Bindings = site.Bindings,
                 EtwLoggingEnabled = site.EtwLoggingEnabled,
+                RequestFieldsEnabled = site.RequestFieldsEnabled,
+                HeaderFieldsEnabled = site.Layout.Known.Count == Requests.HeaderFields.All.Count,
+                ForwardedForUsable = site.Layout.ForwardedForIsLast,
                 Response = input.ResponseBySite is null || !site.EtwLoggingEnabled
                     ? null
                     : input.ResponseBySite.GetValueOrDefault(site.Id) ?? new ResponseStats(),

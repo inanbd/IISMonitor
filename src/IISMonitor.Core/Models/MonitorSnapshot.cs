@@ -18,6 +18,12 @@ public sealed class MonitorSnapshot
 
     /// <summary>SQL Server activity; null when no SQL Server connection string is configured.</summary>
     public DatabaseActivity? Database { get; set; }
+
+    /// <summary>Requests from IIS's log stream by kind and method; null when the log stream isn't running.</summary>
+    public Requests.RequestActivity? Requests { get; set; }
+
+    /// <summary>What the auto blacklist is doing.</summary>
+    public Blocking.BlockingStatus? Blocking { get; set; }
 }
 
 public sealed class ServerMetrics
@@ -32,6 +38,13 @@ public sealed class ServerMetrics
     public double? SqlServerCpuPercent { get; set; }
 
     public long? SqlServerMemoryBytes { get; set; }
+
+    /// <summary>Requests per second from IIS's log stream, by kind; null when the log stream isn't running.</summary>
+    public double? PageViewsPerSec { get; set; }
+    public double? ApiRequestsPerSec { get; set; }
+    public double? StaticRequestsPerSec { get; set; }
+    public double? DownloadsPerSec { get; set; }
+    public double? OtherRequestsPerSec { get; set; }
 }
 
 public sealed class AppPoolMetrics
@@ -130,6 +143,15 @@ public sealed class SiteMetrics
 
     /// <summary>Whether IIS sends this site's log entries to ETW (required for live response times).</summary>
     public bool EtwLoggingEnabled { get; set; }
+
+    /// <summary>The log also carries client IP, method, bytes, user agent and substatus (Requests tab, blacklist).</summary>
+    public bool RequestFieldsEnabled { get; set; }
+
+    /// <summary>The site logs the request and response headers IIS Monitor reads (custom fields).</summary>
+    public bool HeaderFieldsEnabled { get; set; }
+
+    /// <summary>X-Forwarded-For is logged as the last custom field, so visitors behind a trusted proxy can be identified.</summary>
+    public bool ForwardedForUsable { get; set; }
 
     public int? CurrentConnections { get; set; }
     public double? RequestsPerSec { get; set; }

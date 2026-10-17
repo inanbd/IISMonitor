@@ -14,6 +14,7 @@ public sealed class CollectorService(ILogger<CollectorService> logger) : Backgro
         await using var engine = new MonitorEngine(new MonitorEngineOptions
         {
             EtwSessionPrefix = "IISMonitor-Service",
+            EnforceBlocks = true,
             Log = (message, exception) => logger.LogWarning(exception, "{Message}", message),
         });
 

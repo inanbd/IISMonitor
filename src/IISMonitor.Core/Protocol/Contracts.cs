@@ -1,6 +1,8 @@
+using IISMonitor.Core.Blocking;
 using IISMonitor.Core.History;
 using IISMonitor.Core.Metrics;
 using IISMonitor.Core.Models;
+using IISMonitor.Core.Requests;
 using IISMonitor.Core.Settings;
 
 namespace IISMonitor.Core.Protocol;
@@ -36,6 +38,19 @@ public interface IMonitorHost
 
     /// <summary>Turns on IIS's ETW log target (and the log fields response-time tracking needs) for all sites.</summary>
     Task<CommandResult> EnableIisEtwLoggingAsync(CancellationToken cancellationToken);
+
+    /// <summary>Sets up IIS logging for the Requests tab and the blacklist (request fields, header fields per site).</summary>
+    Task<CommandResult> ConfigureIisLoggingAsync(IisLoggingRequest request, CancellationToken cancellationToken);
+
+    Task<RequestPage> QueryRequestsAsync(RequestQuery query, CancellationToken cancellationToken);
+
+    Task<TopIpReport> QueryTopIpsAsync(TopIpQuery query, CancellationToken cancellationToken);
+
+    Task<BlockList> ListBlocksAsync(BlockListQuery query, CancellationToken cancellationToken);
+
+    Task<CommandResult> BlockIpAsync(ManualBlockRequest request, CancellationToken cancellationToken);
+
+    Task<CommandResult> UnblockIpAsync(UnblockRequest request, CancellationToken cancellationToken);
 }
 
 /// <summary>The dashboard's view of a collector, local or over the named pipe.</summary>
@@ -74,4 +89,16 @@ public interface IMonitorBackend : IAsyncDisposable
     Task<SlowQueryReport> QuerySlowQueriesAsync(SlowQueryRequest request, CancellationToken cancellationToken = default);
 
     Task<CommandResult> EnableIisEtwLoggingAsync(CancellationToken cancellationToken = default);
+
+    Task<CommandResult> ConfigureIisLoggingAsync(IisLoggingRequest request, CancellationToken cancellationToken = default);
+
+    Task<RequestPage> QueryRequestsAsync(RequestQuery query, CancellationToken cancellationToken = default);
+
+    Task<TopIpReport> QueryTopIpsAsync(TopIpQuery query, CancellationToken cancellationToken = default);
+
+    Task<BlockList> ListBlocksAsync(BlockListQuery query, CancellationToken cancellationToken = default);
+
+    Task<CommandResult> BlockIpAsync(ManualBlockRequest request, CancellationToken cancellationToken = default);
+
+    Task<CommandResult> UnblockIpAsync(UnblockRequest request, CancellationToken cancellationToken = default);
 }

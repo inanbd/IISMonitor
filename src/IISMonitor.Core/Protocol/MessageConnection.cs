@@ -13,12 +13,18 @@ public static class PipeProtocol
     /// Optional parts of the protocol this build supports, sent in the hello. A dashboard talking to
     /// an older service can tell what that service doesn't provide yet.
     /// </summary>
-    public static readonly IReadOnlyList<string> Features = [Feature.Database];
+    public static readonly IReadOnlyList<string> Features = [Feature.Database, Feature.Requests, Feature.Blocking];
 
     public static class Feature
     {
         /// <summary>SQL Server activity per app pool (snapshot.Database, querySlowQueries).</summary>
         public const string Database = "database";
+
+        /// <summary>The live request log and Top IPs (queryRequests, queryTopIps, configureIisLogging).</summary>
+        public const string Requests = "requests";
+
+        /// <summary>The auto blacklist (listBlocks, blockIp, unblockIp, settings.blocking).</summary>
+        public const string Blocking = "blocking";
     }
 
     public const string Hello = "hello";
@@ -32,6 +38,12 @@ public static class PipeProtocol
     public const string ListEntities = "listEntities";
     public const string QuerySlowQueries = "querySlowQueries";
     public const string EnableIisEtwLogging = "enableIisEtwLogging";
+    public const string ConfigureIisLogging = "configureIisLogging";
+    public const string QueryRequests = "queryRequests";
+    public const string QueryTopIps = "queryTopIps";
+    public const string ListBlocks = "listBlocks";
+    public const string BlockIp = "blockIp";
+    public const string UnblockIp = "unblockIp";
 
     public static readonly JsonSerializerOptions Json = new()
     {

@@ -1,8 +1,10 @@
 using System.IO.Pipes;
+using IISMonitor.Core.Blocking;
 using IISMonitor.Core.History;
 using IISMonitor.Core.Metrics;
 using IISMonitor.Core.Models;
 using IISMonitor.Core.Protocol;
+using IISMonitor.Core.Requests;
 using IISMonitor.Core.Settings;
 
 namespace IISMonitor.Core.Tests;
@@ -48,6 +50,45 @@ public class ProtocolTests
 
         public Task<CommandResult> EnableIisEtwLoggingAsync(CancellationToken cancellationToken) =>
             Task.FromResult(CommandResult.Ok("done"));
+
+        public IisLoggingRequest? LastLoggingRequest { get; private set; }
+
+        public Task<CommandResult> ConfigureIisLoggingAsync(IisLoggingRequest request, CancellationToken cancellationToken)
+        {
+            LastLoggingRequest = request;
+            return Task.FromResult(CommandResult.Ok("configured"));
+        }
+
+        public Task<RequestPage> QueryRequestsAsync(RequestQuery query, CancellationToken cancellationToken) =>
+            Task.FromResult(new RequestPage
+            {
+                LatestId = 7,
+                Matched = 1,
+                Requests =
+                [
+                    new RequestRecord
+                    {
+                        Id = 7, ClientIp = query.Filter.Ip, Method = "POST", MethodGroup = MethodGroup.Post,
+                        Kind = query.Filter.Kinds.FirstOrDefault(), Path = "/wp-login.php", Status = 404, Rule = "WordPress",
+                    },
+                ],
+            });
+
+        public Task<TopIpReport> QueryTopIpsAsync(TopIpQuery query, CancellationToken cancellationToken) =>
+            Task.FromResult(new TopIpReport { Visitors = 1, Rows = [new TopIpRow { Ip = "203.0.113.5", Total = 9, Api = 9, Blocked = "Firewall (Active)" }] });
+
+        public Task<BlockList> ListBlocksAsync(BlockListQuery query, CancellationToken cancellationToken) =>
+            Task.FromResult(new BlockList
+            {
+                Entries = [new BlockEntry { Ip = "203.0.113.5", Method = BlockMethod.Iis, State = BlockState.Active, ExpiresUtc = new DateTime(2026, 10, 18, 0, 0, 0, DateTimeKind.Utc) }],
+                Status = new BlockingStatus { Mode = BlockingMode.Block, Enforcing = true, ActiveIis = 1 },
+            });
+
+        public Task<CommandResult> BlockIpAsync(ManualBlockRequest request, CancellationToken cancellationToken) =>
+            Task.FromResult(CommandResult.Ok($"blocked {request.Ip} via {request.Method}"));
+
+        public Task<CommandResult> UnblockIpAsync(UnblockRequest request, CancellationToken cancellationToken) =>
+            Task.FromResult(CommandResult.Ok($"unblocked {request.Ip}"));
     }
 
     [Fact]
@@ -94,6 +135,36 @@ public class ProtocolTests
         var error = await Assert.ThrowsAsync<InvalidOperationException>(
             () => client.QueryHistoryAsync(new HistoryQuery { Name = "boom" }, cts.Token));
         Assert.Equal("history unavailable", error.Message);
+
+        // Requests and blacklist messages.
+        Assert.Contains(PipeProtocol.Feature.Requests, client.Features);
+        Assert.Contains(PipeProtocol.Feature.Blocking, client.Features);
+        var page = await client.QueryRequestsAsync(new RequestQuery
+        {
+            Filter = new RequestFilter { Ip = "203.0.113.5", Kinds = [RequestKind.XhrApi], Methods = [MethodGroup.Post] },
+        }, cts.Token);
+        var request = Assert.Single(page.Requests);
+        Assert.Equal(("203.0.113.5", RequestKind.XhrApi, MethodGroup.Post, "WordPress"), (request.ClientIp, request.Kind, request.MethodGroup, request.Rule));
+        var top = await client.QueryTopIpsAsync(new TopIpQuery { Window = TopIpWindow.OneDay }, cts.Token);
+        Assert.Equal("Firewall (Active)", Assert.Single(top.Rows).Blocked);
+        var blocks = await client.ListBlocksAsync(new BlockListQuery(), cts.Token);
+        Assert.Equal((BlockMethod.Iis, BlockState.Active), (blocks.Entries[0].Method, blocks.Entries[0].State));
+        Assert.Equal(DateTimeKind.Utc, blocks.Entries[0].ExpiresUtc!.Value.Kind);
+        Assert.Equal(BlockingMode.Block, blocks.Status.Mode);
+        Assert.Equal("blocked 198.51.100.7 via Iis", (await client.BlockIpAsync(new ManualBlockRequest { Ip = "198.51.100.7", Method = BlockMethod.Iis }, cts.Token)).Message);
+        Assert.Equal("unblocked 198.51.100.7", (await client.UnblockIpAsync(new UnblockRequest { Ip = "198.51.100.7" }, cts.Token)).Message);
+        Assert.True((await client.ConfigureIisLoggingAsync(new IisLoggingRequest { HeaderFieldSites = [2, 3] }, cts.Token)).Success);
+        Assert.Equal([2L, 3L], host.LastLoggingRequest!.HeaderFieldSites);
+
+        // A snapshot carries request rates and the blacklist status.
+        host.Publish(new MonitorSnapshot
+        {
+            Requests = new RequestActivity { LatestId = 42, PerSecondByKind = { [RequestKind.Download] = 1.5 } },
+            Blocking = new BlockingStatus { Mode = BlockingMode.Watch, Watching = 2 },
+        });
+        var withRequests = await Next(received, cts.Token);
+        Assert.Equal(1.5, withRequests.Requests!.PerSecondByKind[RequestKind.Download]);
+        Assert.Equal(2, withRequests.Blocking!.Watching);
 
         cts.Cancel();
         await serverTask;

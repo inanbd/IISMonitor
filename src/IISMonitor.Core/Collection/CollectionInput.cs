@@ -33,6 +33,11 @@ public sealed class CollectionInput
     /// <summary>SQL Server activity since the previous tick. Null when no SQL Server connection is configured.</summary>
     public DbActivityInput? DbActivity { get; init; }
 
+    /// <summary>Requests from IIS's log stream since the previous tick; null when it isn't running.</summary>
+    public Requests.RequestActivity? Requests { get; init; }
+
+    public Blocking.BlockingStatus? Blocking { get; init; }
+
     /// <summary>Local SQL Server processes (sqlservr.exe); their samples are in <see cref="ProcessSamples"/>.</summary>
     public IReadOnlyList<int> SqlServerPids { get; init; } = [];
 
@@ -58,6 +63,12 @@ public sealed class SiteInfo
     public List<string> Bindings { get; init; } = [];
     public List<ApplicationInfo> Applications { get; init; } = [];
     public bool EtwLoggingEnabled { get; init; }
+
+    /// <summary>The log also has the client IP, method, bytes sent, user agent and substatus (Requests tab, blacklist).</summary>
+    public bool RequestFieldsEnabled { get; init; }
+
+    /// <summary>The site's custom log fields, including the request and response headers IIS Monitor reads.</summary>
+    public Requests.CustomFieldLayout Layout { get; init; } = Requests.CustomFieldLayout.None;
 
     public string RootAppPool =>
         Applications.FirstOrDefault(a => a.Path == "/")?.AppPool ?? Applications.FirstOrDefault()?.AppPool ?? "";

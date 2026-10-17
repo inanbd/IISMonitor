@@ -1,14 +1,17 @@
 using System.Diagnostics;
+using IISMonitor.Collectors.Blocking;
 using IISMonitor.Collectors.Database;
 using IISMonitor.Collectors.Etw;
 using IISMonitor.Collectors.Iis;
 using IISMonitor.Collectors.Processes;
 using IISMonitor.Core;
+using IISMonitor.Core.Blocking;
 using IISMonitor.Core.Collection;
 using IISMonitor.Core.History;
 using IISMonitor.Core.Metrics;
 using IISMonitor.Core.Models;
 using IISMonitor.Core.Protocol;
+using IISMonitor.Core.Requests;
 using IISMonitor.Core.Settings;
 
 namespace IISMonitor.Collectors;
@@ -21,6 +24,12 @@ public sealed class MonitorEngineOptions
     public string EtwSessionPrefix { get; init; } = "IISMonitor";
 
     public Action<string, Exception?>? Log { get; init; }
+
+    /// <summary>
+    /// Apply the auto blacklist (firewall rules, IIS restrictions). Only the Windows service does:
+    /// a standalone dashboard would stop expiring blocks when it closes.
+    /// </summary>
+    public bool EnforceBlocks { get; init; }
 }
 
 /// <summary>
@@ -43,6 +52,8 @@ public sealed class MonitorEngine : IMonitorHost, IAsyncDisposable
     private readonly ProcessSampler _sampler = new();
     private readonly ResponseTimeAggregator _responses = new();
     private readonly HistoryAggregator _historyAggregator = new();
+    private readonly RequestPipeline _requests;
+    private readonly BlockEnforcer _blocks;
     private readonly CancellationTokenSource _cts = new();
     private readonly bool _elevated;
 
@@ -57,6 +68,8 @@ public sealed class MonitorEngine : IMonitorHost, IAsyncDisposable
     private DateTime _iisLogAttemptUtc;
     private string? _historyError;
     private DateTime _lastPurgeUtc = DateTime.MinValue;
+    private DateTime _lastRequestDrainUtc = DateTime.UtcNow;
+    private DateTime _lastTrackerPruneUtc = DateTime.UtcNow;
     private IisTopology? _topology;
     private PeriodicTimer? _timer;
     private Task? _loop;
@@ -68,6 +81,16 @@ public sealed class MonitorEngine : IMonitorHost, IAsyncDisposable
         _history = new HistoryStore(Path.Combine(_options.DataDirectory, "history.db"));
         _settings = _settingsStore.Load();
         _elevated = SecureDataDirectory.IsElevated();
+
+        // Both outlive the IIS log ETW session, which is restarted after failures.
+        _requests = new RequestPipeline(_responses, decision => _blocks!.Enqueue(decision));
+        _blocks = new BlockEnforcer(
+            new BlockStore(_history.DatabasePath),
+            _requests.Blacklist,
+            ip => _requests.WasSeenViaProxy(ip),
+            _options.EnforceBlocks,
+            _options.DataDirectory,
+            (message, exception) => Log(message, exception));
     }
 
     public MonitorSettings Settings => Volatile.Read(ref _settings);
@@ -108,6 +131,10 @@ public sealed class MonitorEngine : IMonitorHost, IAsyncDisposable
             _historyError = e.Message;
             Log("Could not open the history database.", e);
         }
+
+        var blocking = _settings.Blocking ?? new BlockingSettings().Normalize();
+        _requests.SetTrustedProxies(IpSet.Parse(blocking.TrustedProxies));
+        _blocks.Start(blocking);
 
         lock (_gate)
             ApplyCollectors(_settings, previous: null);
@@ -164,7 +191,7 @@ public sealed class MonitorEngine : IMonitorHost, IAsyncDisposable
             if (!ReferenceEquals(topology, _topology))
             {
                 _topology = topology;
-                _iisLog?.UpdateSites(topology.Sites);
+                _requests.UpdateSites(topology.Sites);
             }
 
             health.Add(Ok("IIS configuration", $"{topology.Sites.Count} sites, {topology.AppPools.Count} app pools."));
@@ -275,6 +302,24 @@ public sealed class MonitorEngine : IMonitorHost, IAsyncDisposable
                 : Ok("Response times (IIS ETW log)", "Off in settings."));
         }
 
+        // Requests by kind, the request log and the blacklist ride on the same log stream.
+        RequestActivity? requestActivity = null;
+        if (_iisLog is { Running: true } requestLog)
+        {
+            requestActivity = _requests.DrainActivity((now - _lastRequestDrainUtc).TotalSeconds);
+            requestActivity.EventsLost = requestLog.EventsLost;
+            health.Add(RequestLogHealth(topologyNow, requestActivity, settings));
+        }
+
+        _lastRequestDrainUtc = now;
+        if (now - _lastTrackerPruneUtc >= TimeSpan.FromMinutes(1))
+        {
+            _lastTrackerPruneUtc = now;
+            _requests.Tracker.Prune(now);
+        }
+
+        health.Add(BlacklistHealth(_blocks.Status));
+
         SystemSample? system = null;
         try
         {
@@ -299,6 +344,8 @@ public sealed class MonitorEngine : IMonitorHost, IAsyncDisposable
             SqlServerPids = sqlServerPids,
             ResponseBySite = responseBySite,
             ResponseByPool = responseByPool,
+            Requests = requestActivity,
+            Blocking = _blocks.Status,
             System = system,
             Health = health,
         });
@@ -336,6 +383,7 @@ public sealed class MonitorEngine : IMonitorHost, IAsyncDisposable
             try
             {
                 _history.Purge(now.AddDays(-settings.HistoryRetentionDays));
+                _blocks.Purge(now.AddDays(-settings.HistoryRetentionDays));
             }
             catch (Exception e)
             {
@@ -454,11 +502,9 @@ public sealed class MonitorEngine : IMonitorHost, IAsyncDisposable
     private void StartIisLog()
     {
         _iisLogAttemptUtc = DateTime.UtcNow;
-        var monitor = new IisLogMonitor(_options.EtwSessionPrefix + "-IISLog", _responses);
+        var monitor = new IisLogMonitor(_options.EtwSessionPrefix + "-IISLog", _requests);
         try
         {
-            if (_topology is { } topology)
-                monitor.UpdateSites(topology.Sites);
             monitor.Start();
             _iisLog = monitor;
             _iisLogError = null;
@@ -484,6 +530,8 @@ public sealed class MonitorEngine : IMonitorHost, IAsyncDisposable
         MonitorSettings normalized;
         lock (_gate)
         {
+            // A dashboard that doesn't edit the blacklist (or predates it) sends none: keep the current one.
+            settings.Blocking ??= _settings.Blocking;
             normalized = settings.Normalize();
             _settingsStore.Save(normalized);
             var previous = _settings;
@@ -491,6 +539,8 @@ public sealed class MonitorEngine : IMonitorHost, IAsyncDisposable
             ApplyCollectors(normalized, previous);
             if (_timer is not null)
                 _timer.Period = TimeSpan.FromMilliseconds(normalized.SampleIntervalMs);
+            _requests.SetTrustedProxies(IpSet.Parse(normalized.Blocking!.TrustedProxies));
+            _blocks.ApplySettings(normalized.Blocking);
         }
 
         Raise(SettingsChanged, normalized);
@@ -517,7 +567,7 @@ public sealed class MonitorEngine : IMonitorHost, IAsyncDisposable
                     try
                     {
                         _topology = _config.Read(force: true);
-                        _iisLog?.UpdateSites(_topology.Sites);
+                        _requests.UpdateSites(_topology.Sites);
                     }
                     catch (Exception e)
                     {
@@ -533,6 +583,94 @@ public sealed class MonitorEngine : IMonitorHost, IAsyncDisposable
                 return CommandResult.Fail(e.Message);
             }
         }, cancellationToken);
+
+    public Task<CommandResult> ConfigureIisLoggingAsync(IisLoggingRequest request, CancellationToken cancellationToken) =>
+        Task.Run(() =>
+        {
+            try
+            {
+                var message = IisLoggingConfig.Configure(request);
+                lock (_gate)
+                {
+                    try
+                    {
+                        _topology = _config.Read(force: true);
+                        _requests.UpdateSites(_topology.Sites);
+                    }
+                    catch (Exception e)
+                    {
+                        Log("Re-reading IIS configuration failed.", e);
+                    }
+                }
+
+                return CommandResult.Ok(message);
+            }
+            catch (Exception e)
+            {
+                Log("Configuring IIS logging failed.", e);
+                return CommandResult.Fail(e.Message);
+            }
+        }, cancellationToken);
+
+    public Task<RequestPage> QueryRequestsAsync(RequestQuery query, CancellationToken cancellationToken) =>
+        Task.Run(() => _requests.Log.Query(query), cancellationToken);
+
+    public Task<TopIpReport> QueryTopIpsAsync(TopIpQuery query, CancellationToken cancellationToken) =>
+        Task.Run(() =>
+        {
+            var report = _requests.Tracker.Query(query, DateTime.UtcNow);
+            var blocks = _blocks.CurrentByIp();
+            foreach (var row in report.Rows)
+            {
+                if (blocks.TryGetValue(row.Ip, out var block))
+                    row.Blocked = block.State == BlockState.Watch ? "Watch" : $"{block.Method} ({block.State})";
+            }
+
+            return report;
+        }, cancellationToken);
+
+    public Task<BlockList> ListBlocksAsync(BlockListQuery query, CancellationToken cancellationToken) =>
+        Task.Run(() => _blocks.List(query), cancellationToken);
+
+    public Task<CommandResult> BlockIpAsync(ManualBlockRequest request, CancellationToken cancellationToken) =>
+        _blocks.BlockAsync(request).WaitAsync(cancellationToken);
+
+    public Task<CommandResult> UnblockIpAsync(UnblockRequest request, CancellationToken cancellationToken) =>
+        _blocks.UnblockAsync(request).WaitAsync(cancellationToken);
+
+    private static CollectorHealth RequestLogHealth(IisTopology? topology, RequestActivity activity, MonitorSettings settings)
+    {
+        const string Name = "Request log (IIS ETW)";
+        var sites = topology?.Sites ?? [];
+        var detailed = sites.Count(s => s.RequestFieldsEnabled);
+        var headers = sites.Count(s => s.Layout.Known.Count == HeaderFields.All.Count);
+        if (detailed == 0)
+            return Fail(Name, "No site logs the client IP, method and user agent yet. Use \"Set up IIS logging\" on the Requests tab.");
+
+        var text = $"{detailed} of {sites.Count} sites log request details; {headers} log header fields.";
+        var proxies = settings.Blocking?.TrustedProxies.Count ?? 0;
+        if (proxies > 0 && activity.Unattributed > 0)
+            return Fail(Name, text + $" {activity.Unattributed} requests from trusted proxies had no usable X-Forwarded-For (log header fields on those sites, with X-Forwarded-For last).");
+        if (activity.EventsLost > 0)
+            return Fail(Name, text + $" ETW dropped {activity.EventsLost:N0} events since the trace started.");
+        return Ok(Name, text);
+    }
+
+    private static CollectorHealth BlacklistHealth(BlockingStatus status)
+    {
+        const string Name = "Auto blacklist";
+        if (status.Mode == BlockingMode.Off)
+            return Ok(Name, "Off.");
+        if (!status.Enforcing)
+            return Ok(Name, "Rules are applied by the IIS Monitor Windows service; this standalone dashboard only shows them.");
+
+        var text = status.Mode == BlockingMode.Watch
+            ? $"Watch mode: {status.Watching} IPs would have been blocked."
+            : $"{status.ActiveFirewall} IPs blocked in the firewall, {status.ActiveIis} in IIS, {status.Pending} pending.";
+        var problems = new[] { status.FirewallProblem, status.IisProblem, status.Failed > 0 ? $"{status.Failed} blocks failed: {status.LastError}" : null }
+            .Where(p => !string.IsNullOrEmpty(p)).ToList();
+        return problems.Count == 0 ? Ok(Name, text) : Fail(Name, text + " " + string.Join(" ", problems));
+    }
 
     private void Raise<T>(EventHandler<T>? handler, T value)
     {
@@ -575,6 +713,7 @@ public sealed class MonitorEngine : IMonitorHost, IAsyncDisposable
 
         if (_sql is { } sql)
             await sql.DisposeAsync().ConfigureAwait(false);
+        await _blocks.DisposeAsync().ConfigureAwait(false);
         _cts.Dispose();
     }
 }

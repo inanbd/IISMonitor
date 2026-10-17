@@ -1,3 +1,5 @@
+using IISMonitor.Core.Requests;
+using IISMonitor.Core.Blocking;
 using System.Collections.Concurrent;
 using System.IO.Pipes;
 using System.Text.Json;
@@ -112,6 +114,24 @@ public sealed class PipeClientBackend : IMonitorBackend
 
     public Task<CommandResult> EnableIisEtwLoggingAsync(CancellationToken cancellationToken = default) =>
         RequestAsync<CommandResult>(PipeProtocol.EnableIisEtwLogging, new { }, cancellationToken);
+
+    public Task<CommandResult> ConfigureIisLoggingAsync(IisLoggingRequest request, CancellationToken cancellationToken = default) =>
+        RequestAsync<CommandResult>(PipeProtocol.ConfigureIisLogging, request, cancellationToken);
+
+    public Task<RequestPage> QueryRequestsAsync(RequestQuery query, CancellationToken cancellationToken = default) =>
+        RequestAsync<RequestPage>(PipeProtocol.QueryRequests, query, cancellationToken);
+
+    public Task<TopIpReport> QueryTopIpsAsync(TopIpQuery query, CancellationToken cancellationToken = default) =>
+        RequestAsync<TopIpReport>(PipeProtocol.QueryTopIps, query, cancellationToken);
+
+    public Task<BlockList> ListBlocksAsync(BlockListQuery query, CancellationToken cancellationToken = default) =>
+        RequestAsync<BlockList>(PipeProtocol.ListBlocks, query, cancellationToken);
+
+    public Task<CommandResult> BlockIpAsync(ManualBlockRequest request, CancellationToken cancellationToken = default) =>
+        RequestAsync<CommandResult>(PipeProtocol.BlockIp, request, cancellationToken);
+
+    public Task<CommandResult> UnblockIpAsync(UnblockRequest request, CancellationToken cancellationToken = default) =>
+        RequestAsync<CommandResult>(PipeProtocol.UnblockIp, request, cancellationToken);
 
     private async Task<T> RequestAsync<T>(string type, object payload, CancellationToken cancellationToken)
     {

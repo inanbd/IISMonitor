@@ -1,3 +1,5 @@
+using IISMonitor.Core.Requests;
+using IISMonitor.Core.Blocking;
 using IISMonitor.Core.History;
 using IISMonitor.Core.Metrics;
 using IISMonitor.Core.Models;
@@ -61,6 +63,24 @@ public sealed class InProcessBackend : IMonitorBackend
 
     public Task<CommandResult> EnableIisEtwLoggingAsync(CancellationToken cancellationToken = default) =>
         _host.EnableIisEtwLoggingAsync(cancellationToken);
+
+    public Task<CommandResult> ConfigureIisLoggingAsync(IisLoggingRequest request, CancellationToken cancellationToken = default) =>
+        _host.ConfigureIisLoggingAsync(request, cancellationToken);
+
+    public Task<RequestPage> QueryRequestsAsync(RequestQuery query, CancellationToken cancellationToken = default) =>
+        _host.QueryRequestsAsync(query, cancellationToken);
+
+    public Task<TopIpReport> QueryTopIpsAsync(TopIpQuery query, CancellationToken cancellationToken = default) =>
+        _host.QueryTopIpsAsync(query, cancellationToken);
+
+    public Task<BlockList> ListBlocksAsync(BlockListQuery query, CancellationToken cancellationToken = default) =>
+        _host.ListBlocksAsync(query, cancellationToken);
+
+    public Task<CommandResult> BlockIpAsync(ManualBlockRequest request, CancellationToken cancellationToken = default) =>
+        _host.BlockIpAsync(request, cancellationToken);
+
+    public Task<CommandResult> UnblockIpAsync(UnblockRequest request, CancellationToken cancellationToken = default) =>
+        _host.UnblockIpAsync(request, cancellationToken);
 
     private void OnSnapshot(object? sender, MonitorSnapshot snapshot) => SnapshotReceived?.Invoke(this, snapshot);
 

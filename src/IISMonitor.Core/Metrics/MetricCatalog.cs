@@ -102,6 +102,11 @@ public static class MetricCatalog
         Avg("mem_total", "Memory total", MetricUnit.Bytes),
         Avg("sql_cpu", "SQL Server CPU %", MetricUnit.Percent),
         Avg("sql_mem", "SQL Server memory", MetricUnit.Bytes),
+        Avg("req_page", "Page views/sec", MetricUnit.PerSecond),
+        Avg("req_api", "XHR/API/sec", MetricUnit.PerSecond),
+        Avg("req_static", "Static content/sec", MetricUnit.PerSecond),
+        Avg("req_download", "Downloads/sec", MetricUnit.PerSecond),
+        Avg("req_other", "Other requests/sec", MetricUnit.PerSecond),
     ];
 
     private static readonly ChartDefinition[] PoolCharts =
@@ -129,11 +134,17 @@ public static class MetricCatalog
         new("Errors/sec", MetricUnit.PerSecond, ["err_4xx", "err_5xx"]),
     ];
 
+    /// <summary>Requests per second by kind, from IIS's log stream (Server and Requests tabs). Declared before ServerCharts, which uses it.</summary>
+    public static readonly ChartDefinition RequestKindChart =
+        new("Requests/sec by kind", MetricUnit.PerSecond, ["req_page", "req_api", "req_static", "req_download", "req_other"]);
+
     private static readonly ChartDefinition[] ServerCharts =
     [
         new("CPU", MetricUnit.Percent, ["cpu", "cpu_max", "sql_cpu"]),
         new("Memory", MetricUnit.Bytes, ["mem_used", "mem_total", "sql_mem"]),
+        RequestKindChart,
     ];
+
 
     public static IReadOnlyList<MetricDefinition> Metrics(EntityKind kind) => kind switch
     {
@@ -205,6 +216,11 @@ public static class MetricCatalog
         ["mem_total"] = server.MemoryTotalBytes,
         ["sql_cpu"] = server.SqlServerCpuPercent,
         ["sql_mem"] = server.SqlServerMemoryBytes,
+        ["req_page"] = server.PageViewsPerSec,
+        ["req_api"] = server.ApiRequestsPerSec,
+        ["req_static"] = server.StaticRequestsPerSec,
+        ["req_download"] = server.DownloadsPerSec,
+        ["req_other"] = server.OtherRequestsPerSec,
     };
 
     /// <summary>

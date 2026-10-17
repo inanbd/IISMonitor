@@ -48,6 +48,12 @@ public sealed class MonitorSettings
     /// <summary>Listen to IIS's ETW log stream for live response times.</summary>
     public bool EnableResponseTimeTracing { get; set; } = true;
 
+    /// <summary>
+    /// Auto blacklist. Null in settings sent by a dashboard that predates it (or by a part of the
+    /// dashboard that doesn't edit it): the collector then keeps the current value.
+    /// </summary>
+    public Blocking.BlockingSettings? Blocking { get; set; }
+
     public MonitorSettings Normalize()
     {
         var copy = Clone();
@@ -66,6 +72,7 @@ public sealed class MonitorSettings
         copy.SlowQueryThresholdSeconds = double.IsFinite(copy.SlowQueryThresholdSeconds)
             ? Math.Clamp(copy.SlowQueryThresholdSeconds, 0.5, 3600)
             : 2;
+        copy.Blocking = (copy.Blocking ?? new Blocking.BlockingSettings()).Normalize();
         return copy;
     }
 

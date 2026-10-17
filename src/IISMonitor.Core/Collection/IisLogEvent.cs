@@ -2,8 +2,30 @@ using System.Globalization;
 
 namespace IISMonitor.Core.Collection;
 
-/// <summary>The parts of an IIS W3C log entry needed for response-time tracking.</summary>
-public readonly record struct IisLogEvent(long? SiteId, string? SiteName, string UriStem, int StatusCode, double TimeTakenMs);
+/// <summary>
+/// One request from IIS's log stream: the fields needed for response times, plus the request
+/// details (client, method, size, user agent, custom header fields) when the site logs them.
+/// </summary>
+public readonly record struct IisLogEvent(long? SiteId, string? SiteName, string UriStem, int StatusCode, double TimeTakenMs)
+{
+    /// <summary>c-ip: the address that connected (a proxy, when there is one in front of IIS).</summary>
+    public string? ClientIp { get; init; }
+
+    public string? Method { get; init; }
+
+    public int SubStatus { get; init; }
+
+    public long? BytesSent { get; init; }
+
+    /// <summary>As IIS logs it, with "+" for spaces.</summary>
+    public string? UserAgent { get; init; }
+
+    /// <summary>The raw CustomFields string ("Name value Name value ..."); parsed per site later.</summary>
+    public string? CustomFields { get; init; }
+
+    /// <summary>When the event was raised (IIS raises it as the request finishes); default when unknown.</summary>
+    public DateTime TimeUtc { get; init; }
+}
 
 /// <summary>
 /// Parses the payload of the Microsoft-Windows-IIS-Logging ETW event. Field names in the event
@@ -14,9 +36,9 @@ public static class IisLogEventParser
 {
     public static bool TryParse(IEnumerable<KeyValuePair<string, object?>> payload, out IisLogEvent result)
     {
-        string? siteField = null, uriStem = null;
-        int? status = null;
-        double? timeTaken = null;
+        string? siteField = null, uriStem = null, clientIp = null, method = null, userAgent = null, customFields = null;
+        int? status = null, subStatus = null;
+        double? timeTaken = null, bytesSent = null;
 
         foreach (var (rawName, value) in payload)
         {
@@ -34,6 +56,24 @@ public static class IisLogEventParser
                 case "timetaken":
                     timeTaken = AsDouble(value);
                     break;
+                case "cip":
+                    clientIp = Present(AsString(value));
+                    break;
+                case "csmethod":
+                    method = Present(AsString(value));
+                    break;
+                case "scsubstatus":
+                    subStatus = AsInt(value);
+                    break;
+                case "scbytes":
+                    bytesSent = AsDouble(value);
+                    break;
+                case "csuseragent":
+                    userAgent = Present(AsString(value));
+                    break;
+                case "customfields":
+                    customFields = Present(AsString(value));
+                    break;
             }
         }
 
@@ -49,7 +89,15 @@ public static class IisLogEventParser
             siteId is null ? siteField : null,
             string.IsNullOrEmpty(uriStem) ? "/" : uriStem,
             status ?? 0,
-            timeTaken.Value);
+            timeTaken.Value)
+        {
+            ClientIp = clientIp,
+            Method = method,
+            SubStatus = subStatus ?? 0,
+            BytesSent = bytesSent is { } bytes and >= 0 ? (long)bytes : null,
+            UserAgent = userAgent,
+            CustomFields = customFields,
+        };
         return true;
     }
 
@@ -68,13 +116,16 @@ public static class IisLogEventParser
         var length = 0;
         foreach (var c in name)
         {
-            if (c is '-' or '_' or ' ')
+            if (c is '-' or '_' or ' ' or '(' or ')')
                 continue;
             buffer[length++] = char.ToLowerInvariant(c);
         }
 
         return new string(buffer[..length]);
     }
+
+    /// <summary>IIS writes "-" for a field with no value.</summary>
+    private static string? Present(string? value) => string.IsNullOrEmpty(value) || value == "-" ? null : value;
 
     private static string? AsString(object? value) => value switch
     {
