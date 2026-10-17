@@ -3,6 +3,7 @@ using System.Net;
 using System.Net.Sockets;
 using System.Runtime.InteropServices;
 using System.Text.Json;
+using IISMonitor.Collectors.Iis;
 using Microsoft.Web.Administration;
 using Microsoft.Win32;
 
@@ -71,7 +72,7 @@ internal readonly record struct IpBlockKey
     /// </summary>
     internal string? ConfigMask => Address.AddressFamily == AddressFamily.InterNetwork
         ? (PrefixLength == 32 ? null : PrefixToIPv4Mask(PrefixLength))
-        : PrefixLength.ToString(CultureInfo.InvariantCulture);
+        : PrefixToIPv6Mask(PrefixLength);   // the form shown to work in the module (a hex mask)
 
     /// <summary>Reads an entry as IIS stores it. Accepts dotted masks, IPv6-style masks and prefix lengths.</summary>
     internal static bool TryFromConfig(string? ipAddress, string? subnetMask, out IpBlockKey key)
@@ -90,9 +91,9 @@ internal readonly record struct IpBlockKey
             if (prefix > max)
                 return false;
         }
-        else if (!IPAddress.TryParse(mask, out var maskAddress) || !TryCountPrefix(maskAddress.GetAddressBytes(), out prefix)
-            || prefix > max)
-            return false;
+        else if (!IPAddress.TryParse(mask, out var maskAddress) || maskAddress.AddressFamily != address.AddressFamily
+                 || !TryCountPrefix(maskAddress.GetAddressBytes(), out prefix) || prefix > max)
+            return false;   // also refuses an IPv4 mask on an IPv6 address: IIS's reading of that is unknown
         key = new IpBlockKey(address, prefix);
         return true;
     }
@@ -117,6 +118,18 @@ internal readonly record struct IpBlockKey
             bytes[i] &= bitsLeft >= 8 ? (byte)0xFF : bitsLeft <= 0 ? (byte)0 : (byte)(0xFF << (8 - bitsLeft));
         }
         return new IPAddress(bytes);
+    }
+
+    private static string PrefixToIPv6Mask(int prefixLength)
+    {
+        var bytes = new byte[16];
+        for (var i = 0; i < 16; i++)
+        {
+            var bitsLeft = prefixLength - i * 8;
+            bytes[i] = bitsLeft >= 8 ? (byte)0xFF : bitsLeft <= 0 ? (byte)0 : (byte)(0xFF << (8 - bitsLeft));
+        }
+
+        return new IPAddress(bytes).ToString();
     }
 
     private static string PrefixToIPv4Mask(int prefixLength)
@@ -160,10 +173,11 @@ internal sealed record IisIpSecurityStatus(
     string DenyAction,
     int ServerEntryCount,
     int OwnedEntryCount,
-    IReadOnlyList<string> Problems)
+    IReadOnlyList<string> Problems,
+    bool SharedConfiguration = false)
 {
     /// <summary>The module is loaded server-wide and reads X-Forwarded-For. Per-site problems are in <see cref="Problems"/>.</summary>
-    public bool CanBlockProxiedVisitors => ModuleDllPresent && ModuleInGlobalModules && ModuleInServerModules && ProxyModeEnabled;
+    public bool CanBlockProxiedVisitors => ModuleDllPresent && ModuleInGlobalModules && ModuleInServerModules && ProxyModeEnabled && !SharedConfiguration;
 }
 
 internal sealed class IisBlockChangeResult
@@ -196,7 +210,6 @@ internal sealed class IisIpBlocker
     private const int MaxAttempts = 3;
     private static readonly string[] DenyActions = ["AbortRequest", "Unauthorized", "Forbidden", "NotFound"];
 
-    private readonly object _gate = new();
     private readonly OwnedEntryLedger _ledger;
     private readonly Func<IReadOnlyCollection<IpBlockKey>> _protectedNetworks;
     private readonly int _maxOwnedEntries;
@@ -211,9 +224,12 @@ internal sealed class IisIpBlocker
         _maxOwnedEntries = maxOwnedEntries;
     }
 
+    /// <summary>Set when the list of entries IIS Monitor added couldn't be read.</summary>
+    public static string? LedgerProblem => OwnedEntryLedger.LoadProblem;
+
     public IisIpSecurityStatus GetStatus(bool checkEverySite = true)
     {
-        lock (_gate)
+        lock (IisConfigWriteLock.Gate)
         {
             var problems = new List<string>();
             var dll = File.Exists(Path.Combine(Environment.SystemDirectory, "inetsrv", "iprestr.dll"));
@@ -245,7 +261,10 @@ internal sealed class IisIpBlocker
             if (!proxyMode)
                 problems.Add("Proxy mode is off at server level: X-Forwarded-For is not checked.");
             if (!allowUnlisted)
-                problems.Add("The server denies unlisted clients (allowUnlisted=false); deny entries change nothing there.");
+                problems.Add("The server only lets listed clients in (allowUnlisted=false).");
+            var shared = SharedConfigurationEnabled(manager);
+            if (shared)
+                problems.Add("IIS Shared Configuration is on: IP restrictions would be written to the shared configuration and apply to every server using it, so IIS Monitor doesn't write them.");
             if (denyAction == "NotFound")
                 problems.Add("denyAction=NotFound: a CDN may cache the 404 and serve it to other visitors.");
 
@@ -255,23 +274,30 @@ internal sealed class IisIpBlocker
                 FindUncoveredPaths(manager, owned, problems);
 
             return new IisIpSecurityStatus(dll, registered, inGlobal, inModules, proxyMode, allowUnlisted, denyAction,
-                entries.Count, owned.Count, problems);
+                entries.Count, owned.Count, problems, shared);
         }
     }
 
-    /// <summary>Turns proxy mode on at server level and, if asked, sets the deny action. Returns whether anything changed.</summary>
+    /// <summary>
+    /// Turns proxy mode on at server level and, if asked, sets the deny action. Returns whether
+    /// anything changed. Refuses (InvalidOperationException) when other IP restrictions exist:
+    /// proxy mode makes IIS check X-Forwarded-For addresses against them too, so a site that only
+    /// lets its CDN in, or a deny on an internal range, could start turning visitors away.
+    /// </summary>
     public bool EnsureServerSettings(string? denyAction = null)
     {
         if (denyAction is not null && !DenyActions.Contains(denyAction, StringComparer.Ordinal))
             throw new ArgumentException("Unknown deny action.", nameof(denyAction));
 
-        lock (_gate)
+        lock (IisConfigWriteLock.Gate)
         {
             using var manager = new ServerManager();
             var section = manager.GetApplicationHostConfiguration().GetSection(SectionPath);
             var changed = false;
             if (!AsBool(section.GetAttributeValue("enableProxyMode")))
             {
+                if (ProxyModeRisk(manager, section) is { } risk)
+                    throw new InvalidOperationException(risk);
                 section["enableProxyMode"] = true;
                 changed = true;
             }
@@ -289,7 +315,7 @@ internal sealed class IisIpBlocker
     /// <summary>The server-level list in IIS order, marking the entries we added.</summary>
     public IReadOnlyList<IpSecurityEntry> ListServerEntries()
     {
-        lock (_gate)
+        lock (IisConfigWriteLock.Gate)
         {
             using var manager = new ServerManager();
             var section = manager.GetApplicationHostConfiguration().GetSection(SectionPath);
@@ -303,7 +329,7 @@ internal sealed class IisIpBlocker
     /// </summary>
     public IisBlockChangeResult Apply(IReadOnlyCollection<IpBlockKey> block, IReadOnlyCollection<IpBlockKey> unblock)
     {
-        lock (_gate)
+        lock (IisConfigWriteLock.Gate)
         {
             for (var attempt = 1; ; attempt++)
             {
@@ -311,10 +337,11 @@ internal sealed class IisIpBlocker
                 {
                     return ApplyOnce(block, unblock);
                 }
-                catch (COMException) when (attempt < MaxAttempts)
+                catch (Exception e) when ((e is COMException or FileLoadException) && attempt < MaxAttempts)
                 {
-                    // Usually another writer (IIS Manager, appcmd) changed or locked the file, or added the same
-                    // entry (0x800700B7, duplicate combined key) between our read and commit: reload and retry.
+                    // Another writer (IIS Manager, appcmd) changed the file between our read and commit
+                    // (FileLoadException "the file has changed on disk"), locked it, or added the same entry
+                    // (0x800700B7, duplicate combined key): reload and retry.
                     Thread.Sleep(250 * attempt);
                 }
             }
@@ -324,7 +351,7 @@ internal sealed class IisIpBlocker
     /// <summary>Forgets ledger keys whose entries an administrator removed by hand. Returns how many were dropped.</summary>
     public int Reconcile()
     {
-        lock (_gate)
+        lock (IisConfigWriteLock.Gate)
         {
             using var manager = new ServerManager();
             var section = manager.GetApplicationHostConfiguration().GetSection(SectionPath);
@@ -351,14 +378,19 @@ internal sealed class IisIpBlocker
 
         var before = _ledger.Keys.ToList();
         var owned = before.ToHashSet();
-        var existing = new Dictionary<IpBlockKey, List<(ConfigurationElement Element, bool Allowed)>>();
+        var existing = new Dictionary<IpBlockKey, List<(ConfigurationElement Element, bool Allowed, string Ip, string Mask)>>();
+        var adminAllows = new List<IpBlockKey>();
         foreach (var element in collection)
         {
             if (!TryReadKey(element, out var key, out var allowed))
                 continue;
             if (!existing.TryGetValue(key, out var list))
                 existing[key] = list = [];
-            list.Add((element, allowed));
+            list.Add((element, allowed,
+                Convert.ToString(element.GetAttributeValue("ipAddress"), CultureInfo.InvariantCulture) ?? "",
+                Convert.ToString(element.GetAttributeValue("subnetMask"), CultureInfo.InvariantCulture) ?? ""));
+            if (allowed)
+                adminAllows.Add(key);
         }
 
         foreach (var key in unblock.Distinct())
@@ -370,9 +402,12 @@ internal sealed class IisIpBlocker
             }
             if (existing.Remove(key, out var list))
             {
-                foreach (var (element, allowed) in list)
+                // Only the element spelled the way we write it: an administrator's deny for the same
+                // address with another mask spelling stays.
+                var ourMask = key.ConfigMask ?? "255.255.255.255";
+                foreach (var (element, allowed, ip, mask) in list)
                 {
-                    if (!allowed)
+                    if (!allowed && ip == key.Address.ToString() && (mask.Length == 0 ? "255.255.255.255" : mask) == ourMask)
                         collection.Remove(element);
                 }
             }
@@ -388,11 +423,16 @@ internal sealed class IisIpBlocker
                 result.Refused.Add(key);
                 continue;
             }
+            // Our deny would go above an administrator's allow for a range containing it: never override that.
+            if (adminAllows.Any(key.Overlaps))
+            {
+                result.AllowedByAdmin.Add(key);
+                continue;
+            }
+
             if (existing.TryGetValue(key, out var list) && list.Count > 0)
             {
-                if (list.Any(e => e.Allowed))
-                    result.AllowedByAdmin.Add(key);
-                else if (!owned.Contains(key))
+                if (!owned.Contains(key))
                     result.AlreadyDeniedByAdmin.Add(key);
                 continue;
             }
@@ -410,9 +450,9 @@ internal sealed class IisIpBlocker
         if (result.Added.Count == 0 && result.Removed.Count == 0)
             return result;
 
-        // Record intent before committing, so a crash leaves at most a ledger key without an entry,
-        // which Reconcile drops, never an entry of ours that we no longer recognise.
-        _ledger.Save(owned);
+        // Before committing, the ledger holds both the old and the new keys, so a crash leaves at most a
+        // ledger key without an entry (Reconcile drops it), never an entry of ours we no longer know.
+        _ledger.Save(before.Concat(owned));
         try
         {
             manager.CommitChanges();
@@ -422,6 +462,8 @@ internal sealed class IisIpBlocker
             _ledger.Save(before);
             throw;
         }
+
+        _ledger.Save(owned);
         result.Committed = true;
         return result;
     }
@@ -455,11 +497,7 @@ internal sealed class IisIpBlocker
                     if (missing > 0)
                         problems.Add($"{label}: {missing} of our deny entries don't reach it (<clear/> or <remove/> below server level).");
                 }
-                catch (COMException e)
-                {
-                    problems.Add($"{label}: can't read its configuration ({e.Message}).");
-                }
-                catch (FileNotFoundException e)
+                catch (Exception e) when (e is COMException or IOException or UnauthorizedAccessException or InvalidOperationException)
                 {
                     problems.Add($"{label}: can't read its configuration ({e.Message}).");
                 }
@@ -494,6 +532,45 @@ internal sealed class IisIpBlocker
                 Convert.ToString(element.GetAttributeValue("ipAddress"), CultureInfo.InvariantCulture),
                 Convert.ToString(element.GetAttributeValue("subnetMask"), CultureInfo.InvariantCulture),
                 out key);
+    }
+
+    /// <summary>Why turning proxy mode on could change how existing IP restrictions treat visitors, or null.</summary>
+    private string? ProxyModeRisk(ServerManager manager, ConfigurationSection server)
+    {
+        var ours = _ledger.Keys.ToHashSet();
+        bool HasOthers(ConfigurationSection section) =>
+            !AsBool(section.GetAttributeValue("allowUnlisted"))
+            || section.GetCollection().Any(e => !TryReadKey(e, out var key, out var allowed) || allowed || !ours.Contains(key));
+
+        if (HasOthers(server))
+            return "Proxy mode is off, and the server already has IP restrictions that proxy mode would apply to visitors behind proxies too. Review them and turn on proxy mode (IIS Manager: IP Address and Domain Restrictions, Edit Feature Settings) if that is what you want.";
+        foreach (var site in manager.Sites)
+        {
+            try
+            {
+                if (HasOthers(manager.GetWebConfiguration(site.Name, "/").GetSection(SectionPath)))
+                    return $"Proxy mode is off, and site {site.Name} has its own IP restrictions that proxy mode would apply to visitors behind proxies too. Review them and turn on proxy mode yourself if that is what you want.";
+            }
+            catch (Exception e) when (e is COMException or IOException or UnauthorizedAccessException or InvalidOperationException)
+            {
+                return $"Proxy mode is off, and site {site.Name}'s IP restrictions can't be read ({e.Message}).";
+            }
+        }
+
+        return null;
+    }
+
+    private static bool SharedConfigurationEnabled(ServerManager manager)
+    {
+        try
+        {
+            var redirection = manager.GetRedirectionConfiguration().GetSection("configurationRedirection");
+            return AsBool(redirection.GetAttributeValue("enabled"));
+        }
+        catch (Exception e) when (e is COMException or IOException or UnauthorizedAccessException or InvalidOperationException)
+        {
+            return false;
+        }
     }
 
     private static bool ContainsNamed(ConfigurationElementCollection collection, string name) =>
@@ -549,12 +626,32 @@ internal sealed class IisIpBlocker
             if (!File.Exists(path))
                 return [];
             var keys = new HashSet<IpBlockKey>();
-            foreach (var text in JsonSerializer.Deserialize<string[]>(File.ReadAllText(path)) ?? [])
+            try
             {
-                if (IpBlockKey.TryParse(text, out var key))
-                    keys.Add(key);
+                foreach (var text in JsonSerializer.Deserialize<string[]>(File.ReadAllText(path)) ?? [])
+                {
+                    if (IpBlockKey.TryParse(text, out var key))
+                        keys.Add(key);
+                }
             }
+            catch (Exception e) when (e is JsonException or IOException or UnauthorizedAccessException)
+            {
+                // Keep the damaged file for a person to look at; the entries it listed are now unknown to us
+                // and stay in IIS until removed by hand.
+                try
+                {
+                    File.Move(path, path + ".damaged-" + DateTime.UtcNow.ToString("yyyyMMddHHmmss", CultureInfo.InvariantCulture), overwrite: true);
+                }
+                catch (Exception moveError) when (moveError is IOException or UnauthorizedAccessException)
+                {
+                }
+
+                LoadProblem = "The list of IIS entries added by IIS Monitor was damaged and set aside: " + e.Message;
+            }
+
             return keys;
         }
+
+        public static string? LoadProblem { get; private set; }
     }
 }

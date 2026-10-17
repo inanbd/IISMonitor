@@ -22,7 +22,6 @@ internal sealed class BlockEnforcer : IAsyncDisposable
     private static readonly TimeSpan SiteCheckInterval = TimeSpan.FromMinutes(10);
     private static readonly TimeSpan RetryInterval = TimeSpan.FromMinutes(1);
     private static readonly TimeSpan AddressRefreshInterval = TimeSpan.FromMinutes(10);
-    private static readonly IReadOnlySet<int> WebPorts = new HashSet<int> { 80, 443 };
 
     private readonly BlockStore _store;
     private readonly BlacklistEngine _engine;
@@ -298,6 +297,8 @@ internal sealed class BlockEnforcer : IAsyncDisposable
 
         var now = DateTime.UtcNow;
         var method = request.Method ?? (_seenViaProxy(ip) == true ? BlockMethod.Iis : BlockMethod.Firewall);
+        if (method == BlockMethod.Iis && IpText.IsPrivate(address))
+            return (CommandResult.Fail($"{ip} is a private address. In IIS proxy mode, blocking it would also turn away other visitors whose X-Forwarded-For passes through it. Block it in the firewall instead."), null);
         var hours = double.IsFinite(request.Hours) ? Math.Clamp(request.Hours, 0, 24 * 365) : 24;
         var entry = new BlockEntry
         {
@@ -385,8 +386,9 @@ internal sealed class BlockEnforcer : IAsyncDisposable
         {
             try
             {
-                // Keep-alive connections opened before the block would otherwise live on for minutes.
-                TcpConnectionDropper.Drop(IPAddress.Parse(entry.Ip), WebPorts);
+                // Keep-alive connections opened before the block would otherwise live on for minutes. The
+                // firewall rule covers every port, so close every connection from the address.
+                TcpConnectionDropper.Drop(IPAddress.Parse(entry.Ip));
             }
             catch (Exception e)
             {
@@ -524,7 +526,7 @@ internal sealed class BlockEnforcer : IAsyncDisposable
         {
             var checkSites = now - _sitesCheckedUtc >= SiteCheckInterval && Snapshot().Any(e => e.Method == BlockMethod.Iis);
             var iis = _iis!.GetStatus(checkSites);
-            _iisAvailable = iis.ModuleDllPresent && iis.ModuleInGlobalModules;
+            _iisAvailable = iis.ModuleDllPresent && iis.ModuleInGlobalModules && !iis.SharedConfiguration;
             if (checkSites)
             {
                 _sitesCheckedUtc = now;
@@ -533,8 +535,11 @@ internal sealed class BlockEnforcer : IAsyncDisposable
 
             // Proxy mode being off is only a problem once there is something to enforce; it's turned on then.
             var problems = iis.Problems.Where(p => !p.StartsWith("Proxy mode is off", StringComparison.Ordinal) || Snapshot().Any(e => e.Method == BlockMethod.Iis))
-                .Where(p => !p.Contains(':') || p.StartsWith("IP and Domain", StringComparison.Ordinal))
+                .Where(p => !p.Contains(':') || p.StartsWith("IP and Domain", StringComparison.Ordinal) || p.StartsWith("IIS Shared", StringComparison.Ordinal))
+                .Where(p => !p.StartsWith("The server only lets listed clients", StringComparison.Ordinal))
                 .ToList();
+            if (IisIpBlocker.LedgerProblem is { } ledger)
+                problems.Add(ledger);
             if (_iisSiteProblems is not null)
                 problems.Add(_iisSiteProblems);
             _iisProblem = problems.Count == 0 ? null : string.Join(" ", problems);

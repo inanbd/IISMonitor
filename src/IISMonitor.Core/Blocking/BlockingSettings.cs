@@ -96,9 +96,10 @@ public sealed class BlockingSettings
 
     /// <summary>
     /// IIS IP restriction changes are written at most this often. Each change rewrites
-    /// applicationHost.config, which restarts ASP.NET Core apps on the server.
+    /// applicationHost.config, which restarts ASP.NET Core apps on the server and uses up one of
+    /// the configuration history snapshots IIS keeps.
     /// </summary>
-    public int IisApplyIntervalSeconds { get; set; } = 60;
+    public int IisApplyIntervalSeconds { get; set; } = 300;
 
     /// <summary>After a firewall block, close TCP connections the IP still has open (IPv4).</summary>
     public bool DropOpenConnections { get; set; } = true;
@@ -117,7 +118,7 @@ public sealed class BlockingSettings
                 .ToList(),
             AllowList = CleanNetworks(AllowList),
             TrustedProxies = CleanNetworks(TrustedProxies),
-            IisApplyIntervalSeconds = Math.Clamp(IisApplyIntervalSeconds, 10, 3600),
+            IisApplyIntervalSeconds = Math.Clamp(IisApplyIntervalSeconds, 30, 3600),
             DropOpenConnections = DropOpenConnections,
         };
     }

@@ -200,3 +200,33 @@ public class RequestDataTests
         Assert.Contains(tracker.Query(new TopIpQuery { Window = TopIpWindow.OneHour }, now.AddMinutes(1)).Rows, r => r.Ip == "192.0.2.24");
     }
 }
+
+public class ClassifierEdgeTests
+{
+    private static RequestKind Kind(string method, string path, int status, string? dest = null, string? mode = null, string? type = null, string? disposition = null) =>
+        RequestClassifier.Classify(new RequestSignals(method, path, status)
+        {
+            SecFetchDest = dest, SecFetchMode = mode, ContentType = type, ContentDisposition = disposition,
+        });
+
+    [Fact]
+    public void Framework_files_in_a_virtual_application_are_static() =>
+        Assert.Equal(RequestKind.Static, Kind("GET", "/app/_framework/System.Private.CoreLib.dll", 200, type: "application/octet-stream"));
+
+    [Fact]
+    public void Static_content_fetched_by_script_is_static() =>
+        Assert.Equal(RequestKind.Static, Kind("GET", "/img/a.png", 200, "empty", "cors", "image/png"));
+
+    [Fact]
+    public void Unknown_disposition_types_mean_download_but_inline_does_not()
+    {
+        Assert.Equal(RequestKind.Download, Kind("GET", "/export", 200, type: "text/plain", disposition: "x-custom; filename=a.txt"));
+        Assert.Equal(RequestKind.PageView, Kind("GET", "/view", 200, "document", "navigate", "text/html", "inline"));
+    }
+
+    [Theory]
+    [InlineData("compression-dictionary", RequestKind.Static)]
+    [InlineData("speculationrules", RequestKind.Other)]
+    public void Chromium_only_destinations_are_mapped(string dest, RequestKind expected) =>
+        Assert.Equal(expected, Kind("GET", "/x", 200, dest, "cors", "application/octet-stream"));
+}

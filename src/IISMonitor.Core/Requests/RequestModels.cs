@@ -45,11 +45,11 @@ public sealed class RequestRecord
     /// <summary>Name of the blacklist rule whose URL pattern the request matched, if any.</summary>
     public string? Rule { get; init; }
 
-    /// <summary>IIS IP restrictions turned it away (substatus 503 on 401/403/404, or 403.6).</summary>
+    /// <summary>IIS IP restrictions turned it away (401/403/404 with substatus 501-504, or 403.6).</summary>
     public bool DeniedByIis => IsIisDenial(Status, SubStatus);
 
     public static bool IsIisDenial(int status, int subStatus) =>
-        (subStatus == 503 && status is 401 or 403 or 404) || (status == 403 && subStatus == 6);
+        (status is 401 or 403 or 404 && subStatus is >= 501 and <= 504) || (status == 403 && subStatus == 6);
 }
 
 /// <summary>Filters for the request log and the Top IPs table. Empty lists mean "all".</summary>

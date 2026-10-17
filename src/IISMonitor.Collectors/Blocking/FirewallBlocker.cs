@@ -48,6 +48,13 @@ internal sealed class FirewallBlocker
     private const int HResultAccessDenied = unchecked((int)0x80070005);  // E_ACCESSDENIED
     private const int HResultInvalidArg = unchecked((int)0x80070057);    // E_INVALIDARG
     private const int HResultNoEndpoints = unchecked((int)0x800706D9);   // EPT_S_NOT_REGISTERED: MpsSvc not running
+    private const int HResultServiceDisabled = unchecked((int)0x80070422); // ERROR_SERVICE_DISABLED
+    private const int HResultRpcUnavailable = unchecked((int)0x800706BA);  // RPC_S_SERVER_UNAVAILABLE
+
+    // Narrowest networks we accept in our rules. Anything wider (0.0.0.0/0, a /8...) would block
+    // huge numbers of people, so a hand-edited rule holding one is repaired, never written back.
+    private const int MinIpv4Prefix = 16;
+    private const int MinIpv6Prefix = 32;
 
     private static readonly NetFwProfileType2[] SingleProfiles =
         [NetFwProfileType2.Domain, NetFwProfileType2.Private, NetFwProfileType2.Public];
@@ -103,7 +110,7 @@ internal sealed class FirewallBlocker
                 else if (modify == NetFwModifyState.GroupPolicyOverride)
                     problem = "The active firewall profile is controlled by Group Policy; locally created rules may not take effect.";
                 else if (modify == NetFwModifyState.InboundBlocked || blockAll)
-                    problem = "The active profile already blocks all unsolicited inbound traffic.";
+                    problem = "The active profile is set to block all incoming connections, which ignores inbound rules: check that this is intended.";
 
                 return new FirewallStatus(true, string.Join(", ", names), enabled, blockAll, modify.ToString(), mergeOff, problem);
             }
@@ -404,7 +411,17 @@ internal sealed class FirewallBlocker
             // IPv6 text never contains '-', so this is "start-end".
             if (!IPAddress.TryParse(token[..dash], out var start) || !IPAddress.TryParse(token[(dash + 1)..], out var end))
                 return false;
-            canonical = $"{Normalize(start)}-{Normalize(end)}";
+            start = Normalize(start);
+            end = Normalize(end);
+            if (start.Equals(end))
+            {
+                canonical = start.ToString();
+                return true;
+            }
+
+            if (start.AddressFamily != end.AddressFamily || RangeTooWide(start, end))
+                return false;
+            canonical = $"{start}-{end}";
             return true;
         }
 
@@ -425,8 +442,25 @@ internal sealed class FirewallBlocker
                 return false;
         }
 
+        if (prefix < (ip.AddressFamily == AddressFamily.InterNetwork ? MinIpv4Prefix : MinIpv6Prefix))
+            return false;
         canonical = prefix == maxBits ? ip.ToString() : $"{ip}/{prefix}";
         return true;
+    }
+
+    /// <summary>A range covering more than a /16 (IPv4) or /32 (IPv6).</summary>
+    private static bool RangeTooWide(IPAddress start, IPAddress end)
+    {
+        var a = start.GetAddressBytes();
+        var b = end.GetAddressBytes();
+        var fixedBytes = start.AddressFamily == AddressFamily.InterNetwork ? MinIpv4Prefix / 8 : MinIpv6Prefix / 8;
+        for (var i = 0; i < fixedBytes; i++)
+        {
+            if (a[i] != b[i])
+                return true;
+        }
+
+        return false;
     }
 
     private static bool TryMaskToPrefix(IPAddress mask, out int prefix)
@@ -702,12 +736,13 @@ internal sealed class FirewallBlocker
 
     private static bool IsComFailure(Exception ex) =>
         ex is COMException or UnauthorizedAccessException or FileNotFoundException or ArgumentException or InvalidCastException
-            || ex.HResult is HResultAccessDenied or HResultNoEndpoints or HResultInvalidArg;
+            || ex.HResult is HResultAccessDenied or HResultNoEndpoints or HResultInvalidArg or HResultServiceDisabled or HResultRpcUnavailable;
 
     private static string Describe(Exception ex) => ex.HResult switch
     {
         HResultAccessDenied => "Access denied changing the firewall. The service must run as LocalSystem or an administrator.",
-        HResultNoEndpoints => "The Windows Defender Firewall service (MpsSvc) is not running.",
+        HResultNoEndpoints or HResultRpcUnavailable => "The Windows Defender Firewall service (MpsSvc) is not running.",
+        HResultServiceDisabled => "The Windows Defender Firewall service (MpsSvc) or the Base Filtering Engine is disabled.",
         HResultInvalidArg => "The firewall rejected a rule value (invalid address list?): " + ex.Message,
         _ => $"Windows Firewall call failed (0x{ex.HResult:X8}): {ex.Message}",
     };

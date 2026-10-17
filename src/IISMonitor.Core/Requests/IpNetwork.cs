@@ -64,6 +64,20 @@ public static class IpText
         return TryParse(entry, out address);
     }
 
+    /// <summary>
+    /// Private and shared ranges (10/8, 172.16/12, 192.168/16, 100.64/10, fc00::/7). Such an address in
+    /// X-Forwarded-For is an internal hop, which many visitors' requests can pass through.
+    /// </summary>
+    public static bool IsPrivate(IPAddress address)
+    {
+        address = Normalize(address);
+        Span<byte> b = stackalloc byte[16];
+        address.TryWriteBytes(b, out var written);
+        if (written == 4)
+            return b[0] == 10 || (b[0] == 172 && (b[1] & 0xF0) == 16) || (b[0] == 192 && b[1] == 168) || (b[0] == 100 && (b[1] & 0xC0) == 64);
+        return (b[0] & 0xFE) == 0xFC;
+    }
+
     public static bool IsAlwaysProtected(IPAddress address)
     {
         address = Normalize(address);

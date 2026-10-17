@@ -15,6 +15,9 @@ internal static class TcpConnectionDropper
     private const int TcpTableOwnerPidConnections = 4;
     private const uint ErrorInsufficientBuffer = 122;
     private const uint MibTcpStateDeleteTcb = 12;
+    private const int StateClosed = 1;
+    private const int StateListen = 2;
+    private const int StateTimeWait = 11;
 
     // MIB_TCPROW_OWNER_PID: state, localAddr, localPort, remoteAddr, remotePort, pid.
     private const int Ipv4RowSize = 24;
@@ -52,15 +55,20 @@ internal static class TcpConnectionDropper
             var wanted = BitConverter.ToUInt32(bytes); // same in-memory layout as dwRemoteAddr
             ForEachRow(AfInet, Ipv4RowSize, row =>
             {
+                // Listening, closed and TIME_WAIT rows have nothing to close.
+                var state = Marshal.ReadInt32(row, 0);
+                if (state is StateClosed or StateListen or StateTimeWait)
+                    return;
                 if ((uint)Marshal.ReadInt32(row, 12) != wanted || !PortWanted(Marshal.ReadInt32(row, 8), localPorts))
                     return;
                 var entry = new MibTcpRow
                 {
                     State = MibTcpStateDeleteTcb,
                     LocalAddr = (uint)Marshal.ReadInt32(row, 4),
-                    LocalPort = (uint)Marshal.ReadInt32(row, 8),
+                    // The upper 16 bits of the port fields may hold uninitialized data.
+                    LocalPort = (uint)Marshal.ReadInt32(row, 8) & 0xFFFF,
                     RemoteAddr = (uint)Marshal.ReadInt32(row, 12),
-                    RemotePort = (uint)Marshal.ReadInt32(row, 16),
+                    RemotePort = (uint)Marshal.ReadInt32(row, 16) & 0xFFFF,
                 };
                 var status = SetTcpEntry(ref entry);
                 if (status == 0) dropped++; else { failed++; lastError = status; }

@@ -119,15 +119,19 @@ public static class RequestClassifier
                         return RequestKind.Download; // Chromium sends empty + navigate for <a download>
                     if (isGet && (media == Media.Download || (media == Media.None && fileKind == RequestKind.Download)))
                         return RequestKind.Download; // PDF viewer range requests, fetch() of a file
+                    if (isGet && (media == Media.Static || (media == Media.None && fileKind == RequestKind.Static)))
+                        return RequestKind.Static;   // images, fonts, .wasm loaded by script
                     return IsSoftNavigation(r, isGet) ? RequestKind.PageView : RequestKind.XhrApi;
                 case "object" or "embed":
                     return media is Media.Download or Media.Binary || fileKind == RequestKind.Download
                         ? RequestKind.Download
                         : RequestKind.Static;
-                case "report":
-                    return RequestKind.Other; // CSP / NEL / Reporting API reports
-                case "webidentity":
+                case "report" or "speculationrules":
+                    return RequestKind.Other; // CSP / NEL / Reporting API reports; prefetch rules
+                case "webidentity" or "email-verification":
                     return RequestKind.XhrApi;
+                case "compression-dictionary" or "webbundle":
+                    return RequestKind.Static;
                 case "audio" or "audioworklet" or "font" or "image" or "json" or "manifest" or "paintworklet"
                     or "script" or "serviceworker" or "sharedworker" or "style" or "text" or "track" or "video"
                     or "worker" or "xslt":
@@ -231,9 +235,10 @@ public static class RequestClassifier
 
     // ---- Paths ----
 
+    /// <summary>Anywhere in the path: IIS apps often live in a virtual application (/app/_framework/...).</summary>
     private static bool IsFrameworkAssetPath(ReadOnlySpan<char> path) =>
-        path.StartsWith("/_framework/", StringComparison.OrdinalIgnoreCase)
-        || path.StartsWith("/_content/", StringComparison.OrdinalIgnoreCase)
+        path.Contains("/_framework/", StringComparison.OrdinalIgnoreCase)
+        || path.Contains("/_content/", StringComparison.OrdinalIgnoreCase)
         || LastSegment(path).Equals("WebResource.axd", StringComparison.OrdinalIgnoreCase)
         || LastSegment(path).Equals("ScriptResource.axd", StringComparison.OrdinalIgnoreCase);
 
@@ -352,11 +357,13 @@ public static class RequestClassifier
         return (comma < 0 ? span : span[..comma]).Trim(" +\t");
     }
 
+    /// <summary>RFC 6266: "attachment", and any type other than "inline" (unknown types are to be treated as attachment).</summary>
     private static bool IsAttachment(string? contentDisposition)
     {
         var span = Clean(contentDisposition);
         var end = span.IndexOfAny(';', ' ', '+');
-        return Is(end < 0 ? span : span[..end], "attachment");
+        var type = (end < 0 ? span : span[..end]).Trim();
+        return !type.IsEmpty && !Is(type, "inline") && type.IndexOf('=') < 0;
     }
 
     // ---- Small helpers ----
@@ -390,6 +397,8 @@ public static class RequestClassifier
         "document", "empty", "image", "script", "style", "font", "iframe", "frame", "fencedframe", "audio", "video",
         "track", "manifest", "worker", "sharedworker", "serviceworker", "audioworklet", "paintworklet", "object",
         "embed", "report", "xslt", "json", "text", "webidentity",
+        // Chromium extras, outside the Fetch spec.
+        "speculationrules", "email-verification", "compression-dictionary", "webbundle",
     ];
 
     private static FrozenSet<string> Set(params string[] items) => items.ToFrozenSet(StringComparer.OrdinalIgnoreCase);

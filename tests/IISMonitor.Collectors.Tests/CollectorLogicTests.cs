@@ -97,7 +97,8 @@ public class BlockingCollectorTests
     [Theory]
     [InlineData("1.2.3.4", "1.2.3.4")]
     [InlineData("1.2.3.4/255.255.255.255", "1.2.3.4")]
-    [InlineData("10.0.0.0/255.0.0.0", "10.0.0.0/8")]
+    [InlineData("10.1.0.0/255.255.0.0", "10.1.0.0/16")]
+    [InlineData("1.2.3.4-1.2.3.4", "1.2.3.4")]
     [InlineData("::ffff:1.2.3.4", "1.2.3.4")]
     [InlineData("2001:db8::1/128", "2001:db8::1")]
     [InlineData("1.2.3.4-1.2.3.9", "1.2.3.4-1.2.3.9")]
@@ -112,6 +113,10 @@ public class BlockingCollectorTests
     [InlineData("LocalSubnet")]
     [InlineData("")]
     [InlineData("1.2.3.4/33")]
+    [InlineData("0.0.0.0/0")]                 // would block everyone
+    [InlineData("10.0.0.0/255.0.0.0")]        // wider than a /16
+    [InlineData("1.0.0.0-1.255.255.255")]
+    [InlineData("::/0")]
     public void Firewall_keywords_and_wildcards_are_not_addresses(string token) =>
         Assert.False(IISMonitor.Collectors.Blocking.FirewallBlocker.TryCanonicalize(token, out _));
 
@@ -124,7 +129,8 @@ public class BlockingCollectorTests
         Assert.Equal(plain, dotted);
         Assert.Equal(plain, prefix);
         Assert.Null(plain.ConfigMask);
-        Assert.Equal("128", IISMonitor.Collectors.Blocking.IpBlockKey.Single(System.Net.IPAddress.Parse("2001:db8::1")).ConfigMask);
+        Assert.Equal("ffff:ffff:ffff:ffff:ffff:ffff:ffff:ffff", IISMonitor.Collectors.Blocking.IpBlockKey.Single(System.Net.IPAddress.Parse("2001:db8::1")).ConfigMask);
+        Assert.False(IISMonitor.Collectors.Blocking.IpBlockKey.TryFromConfig("2001:db8::1", "255.255.255.0", out _));
         Assert.True(IISMonitor.Collectors.Blocking.IpBlockKey.TryFromConfig("10.0.0.0", "255.0.0.0", out var network));
         Assert.True(network.Overlaps(plain) == false && network.Overlaps(IISMonitor.Collectors.Blocking.IpBlockKey.Single(System.Net.IPAddress.Parse("10.9.8.7"))));
     }

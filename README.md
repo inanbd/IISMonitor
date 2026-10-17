@@ -247,7 +247,8 @@ The tab shows:
   - *Other*: robots.txt, CORS preflights, scanner probes and anything else.
   Kinds come from the browser's `Sec-Fetch-*` headers and the response's content type when
   header fields are logged (browsers send `Sec-Fetch-*` to HTTPS sites only), otherwise from the
-  method, status and URL (extension, `/api/` and similar).
+  method, status and URL (extension, `/api/` and similar). Page changes made with script (Turbo,
+  htmx, Blazor enhanced navigation) count as XHR / API.
 - **Requests per second by kind** (chart; also on the Server tab and in history).
 - **Requests**: the newest requests that match (the service keeps the last 20,000). For a
   visitor behind a trusted proxy it shows the visitor and the proxy. Requests to a blacklist
@@ -279,9 +280,15 @@ hours by default, 0 for until lifted). For example, three requests within 10 min
   a **trusted proxy** is blocked with **IIS IP restrictions** in proxy mode (IIS also checks
   `X-Forwarded-For`), which needs the *IP and Domain Restrictions* role service
   (`Install-WindowsFeature Web-IP-Security`). Each IIS change rewrites `applicationHost.config`,
-  which restarts ASP.NET Core apps on the server, so IIS changes are batched (at most once a
-  minute by default; set it in the rules editor). IIS Monitor never removes or changes entries it
-  didn't add.
+  which restarts ASP.NET Core apps on the server and uses up one of the configuration history
+  snapshots IIS keeps, so IIS changes are batched (at most every 5 minutes by default; set it in
+  the rules editor). IIS Monitor turns on proxy mode itself only when no other IP restrictions
+  exist: proxy mode also applies existing rules to the addresses in `X-Forwarded-For`, so on a
+  site that only lets its CDN in it could lock visitors out; then the Blocked IPs list says so
+  and you decide. It never removes or changes entries it didn't add, never puts a deny above an
+  allow entry that covers the address, doesn't write to IIS Shared Configuration, and never
+  blocks private addresses (10.x, 192.168.x, ...) found in `X-Forwarded-For` in IIS, since
+  other visitors' requests can pass through them.
 - **Never blocked**: loopback, this server's addresses, the **allow-list** (addresses and
   networks you enter) and the **trusted proxies**. Requests IIS already turned away
   (403.503 and similar) don't count again.

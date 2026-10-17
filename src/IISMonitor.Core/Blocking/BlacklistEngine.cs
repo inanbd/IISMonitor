@@ -116,6 +116,11 @@ public sealed class BlacklistEngine
             if (IpText.IsAlwaysProtected(client) || _protected.Contains(client))
                 return null;
 
+            // Behind a proxy, a private address is an internal hop, and blocking it in IIS would turn
+            // away everyone whose X-Forwarded-For passes through it.
+            if (viaProxy && IpText.IsPrivate(client))
+                return null;
+
             var now = timeUtc.Ticks;
             PruneIfDue(now);
             foreach (var compiled in _rules)

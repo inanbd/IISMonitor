@@ -142,6 +142,12 @@ internal static class IisLoggingConfig
     /// </summary>
     public static string Configure(IisLoggingRequest request)
     {
+        lock (IisConfigWriteLock.Gate)
+            return ConfigureLocked(request);
+    }
+
+    private static string ConfigureLocked(IisLoggingRequest request)
+    {
         using var manager = new ServerManager();
         var config = manager.GetApplicationHostConfiguration();
         if (IsCentralBinary(config))
@@ -376,4 +382,13 @@ internal static class IisLoggingConfig
                 && SourceName.Equals("HTTP_" + spec.SourceName.Replace('-', '_'), StringComparison.OrdinalIgnoreCase);
         }
     }
+}
+
+/// <summary>
+/// One writer of applicationHost.config at a time inside this process (logging setup and IP
+/// restrictions), so their read-modify-commit cycles don't trip over each other.
+/// </summary>
+internal static class IisConfigWriteLock
+{
+    public static readonly object Gate = new();
 }

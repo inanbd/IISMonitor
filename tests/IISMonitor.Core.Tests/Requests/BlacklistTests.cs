@@ -122,6 +122,17 @@ public sealed class BlacklistTests : IDisposable
     }
 
     [Fact]
+    public void Private_addresses_behind_a_proxy_are_internal_hops_and_never_blocked()
+    {
+        var engine = Engine(rules: new BlockRule { Id = "env", Pattern = "/.env", Hits = 1 });
+        Assert.Null(engine.Observe(IPAddress.Parse("192.168.1.20"), true, "/.env", null, 404, 0, T0));
+        Assert.Null(engine.Observe(IPAddress.Parse("fd00::5"), true, "/.env", null, 404, 0, T0));
+        Assert.NotNull(engine.Observe(IPAddress.Parse("192.168.1.20"), false, "/.env", null, 404, 0, T0));
+        Assert.True(IpText.IsPrivate(IPAddress.Parse("100.64.0.1")));
+        Assert.False(IpText.IsPrivate(IPAddress.Parse("172.32.0.1")));
+    }
+
+    [Fact]
     public void Site_filter_watch_mode_and_off()
     {
         var rule = new BlockRule { Id = "x", Pattern = "/xmlrpc.php", Hits = 1, Sites = ["Blog"] };
@@ -230,7 +241,7 @@ public sealed class BlacklistTests : IDisposable
         Assert.Equal(("/wp-login.php", "/wp-login.php", 1, 10.0, 0.0, true), (rule.Pattern, rule.Name, rule.Hits, rule.WithinMinutes, rule.BlockHours, rule.Enabled));
         Assert.Equal(["198.51.100.0/24", "203.0.113.5"], blocking.AllowList);
         Assert.Equal(["10.0.0.0/8"], blocking.TrustedProxies);
-        Assert.Equal(10, blocking.IisApplyIntervalSeconds);
+        Assert.Equal(30, blocking.IisApplyIntervalSeconds);
         Assert.Equal(["garbage"], BlockingSettings.InvalidNetworks(["garbage", "10.0.0.1"]));
 
         // Settings without a blacklist (an older dashboard) normalize to "off", not to an error.
