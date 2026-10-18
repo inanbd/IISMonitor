@@ -27,6 +27,7 @@ public static class Icons
         ["arrow-left"] = """<path d="M19 12H5"/><path d="m11 6-6 6 6 6"/>""",
         ["check"] = """<path d="m5 12.5 4.5 4.5L19 7.5"/>""",
         ["code"] = """<path d="m8 7-5 5 5 5"/><path d="m16 7 5 5-5 5"/>""",
+        ["mail"] = """<rect x="3" y="5" width="18" height="14" rx="2"/><path d="m4 7 8 6 8-6"/>""",
         ["zoom"] = """<circle cx="11" cy="11" r="6.5"/><path d="m20 20-4.4-4.4M11 8.5v5M8.5 11h5"/>""",
     };
 

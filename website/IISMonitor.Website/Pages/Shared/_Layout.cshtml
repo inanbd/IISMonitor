@@ -65,6 +65,7 @@
                 <a href="/docs/how-it-works" aria-current="@Current("/docs/how-it-works")">How it works</a>
                 <a href="/docs/getting-started" aria-current="@Current("/docs/getting-started")">Install</a>
                 <a href="/faq" aria-current="@Current("/faq")">FAQ</a>
+                <a href="/contact" aria-current="@Current("/contact")">Contact</a>
                 @if (Site.HasSource)
                 {
                     <a href="@Site.Options.SourceUrl" rel="noopener">Source</a>
@@ -100,6 +101,7 @@
                     {
                         <li><a href="@guide.Path">@guide.NavTitle</a></li>
                     }
+                    <li><a href="/contact">Contact</a></li>
                     @if (Site.HasSource)
                     {
                         <li><a href="@Site.Options.SourceUrl" rel="noopener">Source code</a></li>

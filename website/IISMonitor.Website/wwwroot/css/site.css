@@ -15,6 +15,7 @@
     --on-brand: #ffffff;
     --link: #1d62ad;
     --ok: #107c10;
+    --bad: #c42b1c;
     --warn-bg: #fff7dc;
     --warn-line: #e5c25a;
     --code-bg: #f1f4f8;
@@ -46,6 +47,7 @@
         --on-brand: #08111f;
         --link: #8cc2f5;
         --ok: #5fc25f;
+        --bad: #ff8a80;
         --warn-bg: #2a2410;
         --warn-line: #6b5a1d;
         --code-bg: #121d31;
@@ -211,7 +213,8 @@ code, kbd, pre { font-family: var(--mono); font-size: 0.875em; }
         overflow-x: auto;
         scrollbar-width: none;
     }
-    .site-nav a { white-space: nowrap; }
+    .site-nav { gap: 0; }
+    .site-nav a { padding: 6px 8px; font-size: 0.9rem; white-space: nowrap; }
     html { scroll-padding-top: 120px; }
 }
 
@@ -764,3 +767,104 @@ kbd {
 .band code { padding: 0.1em 0.35em; border-radius: 5px; background: rgb(255 255 255 / 0.12); color: #fff; }
 .faq-list summary h2 { margin: 0; font-size: inherit; font-weight: inherit; letter-spacing: -0.01em; }
 .faq-list + p { margin-top: 2.4em; }
+
+/* ---------- Contact ---------- */
+
+.contact-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr);
+    gap: clamp(28px, 4vw, 56px);
+    align-items: start;
+    padding-top: clamp(32px, 4vw, 48px);
+    padding-bottom: clamp(64px, 8vw, 104px);
+}
+@media (max-width: 900px) { .contact-grid { grid-template-columns: minmax(0, 1fr); } }
+
+.form-card {
+    padding: clamp(22px, 4vw, 40px);
+    border: 1px solid var(--line);
+    border-radius: calc(var(--radius) * 1.25);
+    background: var(--bg);
+    box-shadow: var(--shadow-soft);
+}
+.form-card h2 { font-size: 1.4rem; letter-spacing: -0.015em; }
+.form-card > .note { margin-top: 18px; }
+
+.contact-form { margin-top: 22px; }
+.field { display: grid; gap: 6px; align-content: start; }
+.contact-form > * + * { margin-top: 18px; }
+.field-row { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+@media (max-width: 560px) { .field-row { grid-template-columns: 1fr; } }
+
+.field label { color: var(--ink); font-size: 0.95rem; font-weight: 600; }
+.field .optional { color: var(--muted); font-weight: 400; }
+
+.field input, .field select, .field textarea {
+    width: 100%;
+    padding: 11px 13px;
+    border: 1px solid var(--line-strong);
+    border-radius: var(--radius-small);
+    background: var(--bg);
+    color: var(--ink);
+    font: inherit;
+    font-size: 1rem;
+    line-height: 1.4;
+    transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+.field textarea { min-height: 190px; resize: vertical; }
+.field select {
+    appearance: none;
+    padding-right: 38px;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%235b6878' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 12px center;
+    background-size: 16px;
+}
+.field input:hover, .field select:hover, .field textarea:hover { border-color: var(--muted); }
+.field input:focus, .field select:focus, .field textarea:focus {
+    outline: none;
+    border-color: var(--brand-2);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--brand-2) 22%, transparent);
+}
+.field [aria-invalid="true"] { border-color: var(--bad); }
+.field [aria-invalid="true"]:focus { box-shadow: 0 0 0 3px color-mix(in srgb, var(--bad) 20%, transparent); }
+.field-error { color: var(--bad); font-size: 0.9rem; }
+.field-hint { color: var(--muted); font-size: 0.88rem; }
+
+.form-alert {
+    margin-top: 18px;
+    padding: 12px 16px;
+    border: 1px solid color-mix(in srgb, var(--bad) 40%, var(--line));
+    border-left: 3px solid var(--bad);
+    border-radius: var(--radius-small);
+    background: color-mix(in srgb, var(--bad) 7%, var(--bg));
+    color: var(--ink);
+    font-size: 0.97rem;
+}
+
+.form-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 14px 20px; margin-top: 24px; }
+.form-note { flex: 1 1 260px; color: var(--muted); font-size: 0.88rem; }
+button.button { cursor: pointer; font-family: inherit; }
+
+/* The honeypot: out of sight and out of the tab order, but still in the form. */
+.hp { position: absolute; left: -10000px; width: 1px; height: 1px; overflow: hidden; }
+
+.form-done { padding: 12px 0; text-align: center; }
+.form-done-icon {
+    display: inline-grid;
+    place-items: center;
+    width: 56px;
+    height: 56px;
+    border-radius: 50%;
+    background: color-mix(in srgb, var(--ok) 14%, var(--bg));
+    color: var(--ok);
+}
+.form-done-icon .icon { width: 28px; height: 28px; }
+.form-done h2 { margin-top: 18px; }
+.form-done p { margin-top: 10px; color: var(--muted); }
+.form-done .button { margin-top: 12px; }
+
+.contact-aside { display: grid; gap: 16px; }
+.contact-aside .mini h2 { font-family: var(--font-display); font-size: 1.05rem; }
+.contact-aside .mini p { margin-top: 6px; }
+.contact-aside .checks { margin-top: 10px; gap: 6px; font-size: 0.95rem; }

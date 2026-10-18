@@ -166,7 +166,14 @@ public static class SiteMap
             "Short answers to the questions people ask first."),
     ];
 
-    public static readonly IReadOnlyList<SitePage> All = [Home, FeatureIndex, .. FeaturePages, .. GuidePages];
+    public static readonly SitePage Contact = new(
+        "/contact", "Contact",
+        "Contact",
+        "Get in touch",
+        "Questions about IIS Monitor, a feature request or a problem on your server? Send me a message and I'll reply by email.",
+        Icon: "mail");
+
+    public static readonly IReadOnlyList<SitePage> All = [Home, FeatureIndex, .. FeaturePages, .. GuidePages, Contact];
 
     private static readonly Dictionary<string, SitePage> ByPath = All.ToDictionary(p => p.Path, StringComparer.OrdinalIgnoreCase);
 

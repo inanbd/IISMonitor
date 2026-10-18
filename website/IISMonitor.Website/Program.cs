@@ -1,5 +1,6 @@
 using IISMonitor.Website.Site;
 using Microsoft.AspNetCore.ResponseCompression;
+using Microsoft.Extensions.Options;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -9,6 +10,10 @@ builder.Services.AddRazorPages();
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddSingleton<Screenshots>();
 builder.Services.AddScoped<SiteContext>();
+builder.Services.Configure<EmailOptions>(builder.Configuration.GetSection(EmailOptions.SectionName));
+builder.Services.AddScoped<IContactMailer, ContactMailer>();
+builder.Services.AddSingleton<ContactThrottle>();
+builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddResponseCompression(options =>
 {
     // Pages hold no secrets, so compressing over HTTPS carries no BREACH risk.
@@ -19,6 +24,9 @@ builder.Services.AddResponseCompression(options =>
 });
 
 var app = builder.Build();
+
+if (!app.Services.GetRequiredService<IOptions<EmailOptions>>().Value.IsConfigured)
+    app.Logger.LogWarning("The contact form is off: set Email:To, Email:From and Email:Smtp:Host (or Email:PickupDirectory) in appsettings.json.");
 
 if (!app.Environment.IsDevelopment())
 {

@@ -1,0 +1,141 @@
+@page "/contact"
+@model ContactModel
+@{
+    var current = SiteMap.Contact;
+
+    // The first error for a field, with the attributes that tie it to its input for screen readers.
+    string? ErrorFor(string field) => ModelState[$"Form.{field}"]?.Errors.FirstOrDefault()?.ErrorMessage;
+    string? Invalid(string field) => ErrorFor(field) is null ? null : "true";
+    string? DescribedBy(string field, string? hint = null) =>
+        string.Join(' ', new[] { hint, ErrorFor(field) is null ? null : $"{field.ToLowerInvariant()}-error" }.Where(id => id is not null)) is { Length: > 0 } ids ? ids : null;
+    var formErrors = ModelState[string.Empty]?.Errors.Select(e => e.ErrorMessage).ToList() ?? [];
+
+    void FieldError(string field)
+    {
+        if (ErrorFor(field) is { } error)
+        {
+            <p class="field-error" id="@($"{field.ToLowerInvariant()}-error")">@error</p>
+        }
+    }
+}
+
+<div class="container">
+    <nav class="crumbs" aria-label="Breadcrumb">
+        <ol>
+            <li><a href="/">Home</a></li>
+            <li><span aria-current="page">@current.NavTitle</span></li>
+        </ol>
+    </nav>
+    <header class="page-head">
+        <p class="eyebrow">@Icons.Svg(current.Icon)<span>@current.NavTitle</span></p>
+        <h1>@current.Heading</h1>
+        <p class="lead">@current.Description</p>
+    </header>
+</div>
+
+<div class="container contact-grid">
+    <section class="form-card" aria-labelledby="form-title">
+        @if (Model.Sent)
+        {
+            <div class="form-done" role="status">
+                <span class="form-done-icon">@Icons.Svg("check")</span>
+                <h2 id="form-title">Thank you, your message is on its way</h2>
+                <p>It has been emailed to me, and I'll reply to the address you gave.</p>
+                <p><a class="button button-quiet" href="/contact">Send another message</a></p>
+            </div>
+        }
+        else if (!Model.CanSend)
+        {
+            <h2 id="form-title">Send a message</h2>
+            <div class="note note-warn">
+                @Icons.Svg("help")
+                <div><p>The contact form isn't available right now. Please try again later.</p></div>
+            </div>
+        }
+        else
+        {
+            <h2 id="form-title">Send a message</h2>
+            @if (formErrors.Count > 0)
+            {
+                <div class="form-alert" role="alert">
+                    @foreach (var error in formErrors)
+                    {
+                        <p>@error</p>
+                    }
+                </div>
+            }
+            else if (!ModelState.IsValid)
+            {
+                <div class="form-alert" role="alert"><p>Please check the fields marked below.</p></div>
+            }
+
+            <form method="post" class="contact-form">
+                <div class="field-row">
+                    <div class="field">
+                        <label asp-for="Form.Name"></label>
+                        <input asp-for="Form.Name" autocomplete="name" required maxlength="100"
+                               aria-invalid="@Invalid("Name")" aria-describedby="@DescribedBy("Name")">
+                        @{ FieldError("Name"); }
+                    </div>
+                    <div class="field">
+                        <label asp-for="Form.Email"></label>
+                        <input asp-for="Form.Email" type="email" autocomplete="email" required maxlength="254" spellcheck="false"
+                               aria-invalid="@Invalid("Email")" aria-describedby="@DescribedBy("Email")">
+                        @{ FieldError("Email"); }
+                    </div>
+                </div>
+                <div class="field-row">
+                    <div class="field">
+                        <label asp-for="Form.Company">Company <span class="optional">(optional)</span></label>
+                        <input asp-for="Form.Company" autocomplete="organization" maxlength="100"
+                               aria-invalid="@Invalid("Company")" aria-describedby="@DescribedBy("Company")">
+                        @{ FieldError("Company"); }
+                    </div>
+                    <div class="field">
+                        <label asp-for="Form.Topic"></label>
+                        <select asp-for="Form.Topic" asp-items="@(new SelectList(ContactModel.Topics))"></select>
+                    </div>
+                </div>
+                <div class="field">
+                    <label asp-for="Form.Message"></label>
+                    <textarea asp-for="Form.Message" rows="8" required minlength="10" maxlength="5000"
+                              aria-invalid="@Invalid("Message")" aria-describedby="@DescribedBy("Message", "message-hint")"></textarea>
+                    <p class="field-hint" id="message-hint">For a problem, say what you expected, what happened, and what the Collectors tab shows.</p>
+                    @{ FieldError("Message"); }
+                </div>
+
+                <div class="hp" aria-hidden="true">
+                    <label for="website">Leave this field empty</label>
+                    <input id="website" name="Website" type="text" tabindex="-1" autocomplete="off">
+                </div>
+                <input type="hidden" name="Stamp" value="@Model.Stamp">
+
+                <div class="form-actions">
+                    <button class="button" type="submit">Send message @Icons.Svg("arrow-right")</button>
+                    <p class="form-note">Your details are used only to reply to you. They are emailed to me and not stored on this website.</p>
+                </div>
+            </form>
+        }
+    </section>
+
+    <aside class="contact-aside">
+        <div class="mini">
+            <h2>Before you write</h2>
+            <p>Many questions are answered in the <a href="/faq">FAQ</a>, and the <a href="/docs/troubleshooting">troubleshooting guide</a> covers missing numbers and failed blocks.</p>
+        </div>
+        <div class="mini">
+            <h2>Reporting a problem?</h2>
+            <p>These help me answer quickly:</p>
+            <ul class="checks">
+                <li>@Icons.Svg("check")<span>Your Windows Server version</span></li>
+                <li>@Icons.Svg("check")<span>What you expected and what happened</span></li>
+                <li>@Icons.Svg("check")<span>What the <a href="/features/collectors">Collectors</a> tab says</span></li>
+                <li>@Icons.Svg("check")<span>Any IISMonitor errors in the Application event log</span></li>
+            </ul>
+        </div>
+        <div class="mini">
+            <h2>Ideas welcome</h2>
+            <p>A metric you miss, a chart that would help, a rule the auto blacklist should offer: tell me about it.</p>
+        </div>
+    </aside>
+</div>

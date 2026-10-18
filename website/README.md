@@ -25,6 +25,47 @@ Then open <http://localhost:5080>.
 | `SourceUrl` | Source repository. When set, a **Source** link appears in the header and footer. |
 | `Publisher` | Company or person shown in the footer copyright and in the structured data. Optional. |
 
+## Contact form and email
+
+The **Contact** page (`/contact`) emails each message to you. The message comes from the address in
+`Email:From`, with the visitor in **Reply-To**, so your mail program's *Reply* answers the visitor. The
+site stores nothing: messages go straight out by email, and logs record only the topic.
+
+Settings, in the `Email` section of `appsettings.json`:
+
+| Setting | Purpose |
+|---|---|
+| `To` | Who receives messages. Several addresses can be separated by commas. |
+| `From`, `FromName` | The sender. Use an address your SMTP server is allowed to send from, ideally on your own domain, or SPF/DMARC checks may send the messages to spam. |
+| `SubjectPrefix` | Put in front of every subject, such as `[IIS Monitor] Feature request: Ada Lovelace`, for mail filters. |
+| `MaxMessagesPerHour` | How many messages one visitor (IP address) can send per hour. 5 by default. |
+| `Smtp:Host`, `Smtp:Port` | Your SMTP server, such as `smtp.example.com` and `587`. |
+| `Smtp:Security` | `StartTls` (usually port 587), `SslOnConnect` (usually port 465), `Auto`, `StartTlsWhenAvailable` or `None`. |
+| `Smtp:UserName`, `Smtp:Password` | Sign-in for the SMTP server; leave the user name empty if it needs none. |
+| `Smtp:TimeoutSeconds` | How long to wait for the server. 30 by default. |
+| `PickupDirectory` | When set, messages are written to this folder as `.eml` files instead of being sent. Development uses `mail-pickup` (see `appsettings.Development.json`), so you can try the form without an SMTP server. |
+
+The form is switched off, with a notice on the page and a warning in the log at startup, until `To`,
+`From` and either `Smtp:Host` or `PickupDirectory` are set.
+
+**Keep the password out of `appsettings.json`**, which is committed to the repository:
+
+- Development: `dotnet user-secrets set "Email:Smtp:Password" "..." --project website/IISMonitor.Website`
+- Production: set the environment variable `Email__Smtp__Password` (in IIS, under the site's
+  Configuration Editor → `system.webServer/aspNetCore` → `environmentVariables`, or in `web.config`), or
+  your host's secret store. Any other setting can be overridden the same way, such as `Email__Smtp__Host`.
+
+Most mail providers and transactional email services (Amazon SES, Mailgun, SendGrid, Postmark, Brevo
+and others) offer SMTP submission on port 587 with STARTTLS. Microsoft 365 and Google Workspace
+increasingly restrict password-based SMTP sign-in; check your provider's current guidance, or use a
+transactional service's SMTP relay.
+
+Spam protection, built in: an anti-forgery token, a hidden field that only bots fill in, a check that
+the form wasn't sent within seconds of loading, the hourly limit per visitor, and validation of every
+field. Bots get the same "sent" page as people, so they learn nothing. Behind a reverse proxy or load
+balancer, configure ASP.NET Core's forwarded headers so the limit counts real visitors rather than
+the proxy; IIS's ASP.NET Core Module already passes the client's address through.
+
 ## Replace the screenshots
 
 The images in `IISMonitor.Website/wwwroot/images/screenshots` are **placeholders**: mockups of the
@@ -74,6 +115,7 @@ Tips:
 | Guides | `Pages/Docs/*.cshtml` |
 | Home page | `Pages/Index.cshtml` |
 | FAQ (page and FAQ structured data) | `Site/Faq.cs` |
+| Contact page and its email | `Pages/Contact.cshtml(.cs)`, `Site/ContactMailer.cs`, `Site/EmailOptions.cs` |
 | Header, footer, `<head>` tags | `Pages/Shared/_Layout.cshtml` |
 | Breadcrumb, side menu, previous/next | `Pages/Shared/_ArticleLayout.cshtml` |
 | Styles (light and dark) | `wwwroot/css/site.css` |

@@ -97,6 +97,17 @@ public sealed class SiteContext(IOptions<SiteOptions> options, IHttpContextAcces
                 }).ToList(),
             });
         }
+        else if (page == SiteMap.Contact)
+        {
+            graph.Add(new Dictionary<string, object?>
+            {
+                ["@type"] = "ContactPage",
+                ["name"] = page.Heading,
+                ["description"] = page.Description,
+                ["url"] = Absolute(page.Path),
+                ["isPartOf"] = new Dictionary<string, object?> { ["@id"] = Absolute("/#website") },
+            });
+        }
         else
         {
             graph.Add(new Dictionary<string, object?>
