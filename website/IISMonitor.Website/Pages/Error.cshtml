@@ -1,0 +1,18 @@
+@page "/error"
+@{
+    ViewData["Title"] = "Something went wrong";
+    ViewData["Description"] = "An error occurred while processing your request.";
+    if (Response.StatusCode == StatusCodes.Status200OK)
+        Response.StatusCode = StatusCodes.Status500InternalServerError;
+}
+
+<section class="error-page">
+    <div class="container">
+        <p class="code">Error</p>
+        <h1>Something went wrong</h1>
+        <p class="lead">The page couldn't be shown. Please try again in a moment.</p>
+        <div class="actions">
+            <a class="button" href="/">Back to the home page</a>
+        </div>
+    </div>
+</section>

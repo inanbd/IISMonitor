@@ -1,0 +1,163 @@
+@page "/"
+@{
+    var home = SiteMap.Home;
+    SitePage Feature(string path) => SiteMap.Get(path);
+}
+
+<section class="hero">
+    <div class="container">
+        <p class="pill"><span class="dot" aria-hidden="true"></span>For Windows Server 2022 and 2025 · IIS 10</p>
+        <h1>@home.Heading</h1>
+        <p class="lead">IIS Monitor watches every website and application pool on your server: CPU, memory, disk, network, response times, every request and the SQL Server load each pool creates. Live, as often as four times a second, and recorded for seven days.</p>
+        <div class="actions">
+            <a class="button" href="@Site.DownloadUrl">@(Site.HasDownload ? "Download IIS Monitor" : "Get started") @Icons.Svg("arrow-right")</a>
+            <a class="button button-quiet" href="/features">Explore the features</a>
+        </div>
+        <screenshot name="overview" alt="@home.ScreenshotAlt" variant="hero hero-shot" priority="true" />
+    </div>
+</section>
+
+<section class="facts-band" aria-label="IIS Monitor at a glance">
+    <div class="container">
+        <dl class="facts">
+            <div><dt>Live updates, as often as</dt><dd>0.25 s</dd></div>
+            <div><dt>History kept</dt><dd>7 days</dd></div>
+            <div><dt>History resolution</dt><dd>10 s</dd></div>
+            <div><dt>Installed on SQL Server</dt><dd>Nothing</dd></div>
+            <div><dt>Network ports opened</dt><dd>None</dd></div>
+        </dl>
+    </div>
+</section>
+
+<section class="section" aria-labelledby="questions-title">
+    <div class="container">
+        <div class="section-head">
+            <p class="eyebrow">Answers, not log files</p>
+            <h2 id="questions-title">The questions you ask when a server slows down</h2>
+            <p class="lead">IIS Monitor puts each answer one tab away, so you can go from “the site is slow” to the app pool, the request or the query behind it.</p>
+        </div>
+        <ul class="questions">
+            <li><a href="/features/overview"><div><strong>Which app pool is eating the CPU?</strong><span>Overview: every pool, one line each</span></div>@Icons.Svg("arrow-right")</a></li>
+            <li><a href="/features/sites"><div><strong>Which site got slow, and how slow?</strong><span>Sites: average, p95 and max response time</span></div>@Icons.Svg("arrow-right")</a></li>
+            <li><a href="/features/requests"><div><strong>Who is hammering /wp-login.php?</strong><span>Requests: every request and its IP</span></div>@Icons.Svg("arrow-right")</a></li>
+            <li><a href="/features/database"><div><strong>Which queries is this app pool waiting on?</strong><span>Database: load, blocking, slow queries</span></div>@Icons.Svg("arrow-right")</a></li>
+            <li><a href="/features/history"><div><strong>What happened at 3 a.m.?</strong><span>History: 7 days, recorded by a service</span></div>@Icons.Svg("arrow-right")</a></li>
+            <li><a href="/features/collectors"><div><strong>Why is this column empty?</strong><span>Collectors: every source and its status</span></div>@Icons.Svg("arrow-right")</a></li>
+        </ul>
+    </div>
+</section>
+
+<section class="section section-soft" aria-labelledby="features-title">
+    <div class="container">
+        <div class="section-head">
+            <p class="eyebrow">Features</p>
+            <h2 id="features-title">One dashboard for the whole IIS server</h2>
+            <p class="lead">Ten views, from a live comparison of every app pool to the single query that is blocking checkout.</p>
+        </div>
+        <ul class="cards">
+            @foreach (var feature in SiteMap.FeaturePages)
+            {
+                <li>
+                    <div class="card">
+                        <span class="card-icon">@Icons.Svg(feature.Icon)</span>
+                        <h3><a href="@feature.Path">@feature.NavTitle</a></h3>
+                        <p>@feature.Summary</p>
+                        <span class="more" aria-hidden="true">Learn more @Icons.Svg("arrow-right")</span>
+                    </div>
+                </li>
+            }
+        </ul>
+    </div>
+</section>
+
+<section class="section" aria-labelledby="iis-title">
+    <div class="container split">
+        <div>
+            <p class="eyebrow">@Icons.Svg("layers")<span>Built around app pools</span></p>
+            <h2 id="iis-title">Measured the way IIS really works</h2>
+            <p class="lead">An app pool is more than one w3wp.exe, and website traffic never passes through it. IIS Monitor accounts for both, so the numbers add up.</p>
+            <ul class="checks">
+                <li>@Icons.Svg("check")<span>Every worker process and the processes it starts (out-of-process ASP.NET Core, PHP FastCGI, iisnode) count toward their pool.</span></li>
+                <li>@Icons.Svg("check")<span>Website traffic comes from IIS, because HTTP.sys, not w3wp.exe, owns ports 80 and 443.</span></li>
+                <li>@Icons.Svg("check")<span>Response times come straight from IIS's log stream (ETW), with no log files to parse.</span></li>
+                <li>@Icons.Svg("check")<span>Recycles and web gardens just work: process IDs are re-mapped on every update.</span></li>
+            </ul>
+            <p class="actions"><a class="button button-quiet" href="@Feature("/features/app-pools").Path">See the App pools tab @Icons.Svg("arrow-right")</a></p>
+        </div>
+        <screenshot name="app-pools" alt="@Feature("/features/app-pools").ScreenshotAlt" />
+    </div>
+</section>
+
+<section class="section section-soft" aria-labelledby="db-title">
+    <div class="container split reverse">
+        <div>
+            <p class="eyebrow">@Icons.Svg("database")<span>SQL Server, per app pool</span></p>
+            <h2 id="db-title">Find the app pool behind a busy SQL Server</h2>
+            <p class="lead">Every second, IIS Monitor asks SQL Server what is running and which process sent it, then adds it up per app pool. Nothing to install on the database server.</p>
+            <ul class="checks">
+                <li>@Icons.Svg("check")<span>Database load per app pool, split into time on CPU and time waiting.</span></li>
+                <li>@Icons.Svg("check")<span>Blocking chains, with the app pool that holds the lock.</span></li>
+                <li>@Icons.Svg("check")<span>Slow queries named after the procedure or batch your app called.</span></li>
+                <li>@Icons.Svg("check")<span>Literal values replaced with <code>?</code> before anything is stored.</span></li>
+            </ul>
+            <p class="actions"><a class="button button-quiet" href="/features/database">See the Database tab @Icons.Svg("arrow-right")</a></p>
+        </div>
+        <screenshot name="database" alt="@Feature("/features/database").ScreenshotAlt" />
+    </div>
+</section>
+
+<section class="section" aria-labelledby="security-title">
+    <div class="container split">
+        <div>
+            <p class="eyebrow">@Icons.Svg("shield")<span>Auto blacklist</span></p>
+            <h2 id="security-title">Stop scanners before they find something</h2>
+            <p class="lead">Every request is logged with its client IP. Rules block an IP after it asks for URLs only attackers ask for, a few times within a few minutes.</p>
+            <ul class="checks">
+                <li>@Icons.Svg("check")<span>Windows Firewall blocks for direct visitors, IIS IP restrictions for visitors behind a proxy or CDN.</span></li>
+                <li>@Icons.Svg("check")<span>A watch-only mode to try rules before they block anyone.</span></li>
+                <li>@Icons.Svg("check")<span>Your allow-list, trusted proxies and the server itself are never blocked.</span></li>
+                <li>@Icons.Svg("check")<span>Blocks expire on schedule, even while the service is stopped.</span></li>
+            </ul>
+            <p class="actions"><a class="button button-quiet" href="/features/auto-blacklist">See the auto blacklist @Icons.Svg("arrow-right")</a></p>
+        </div>
+        <screenshot name="blacklist-rules" alt="@Feature("/features/auto-blacklist").ScreenshotAlt" />
+    </div>
+</section>
+
+<section class="section section-soft" aria-labelledby="how-title">
+    <div class="container">
+        <div class="section-head">
+            <p class="eyebrow">How it works</p>
+            <h2 id="how-title">Always collecting, nothing exposed</h2>
+            <p class="lead">A small Windows service does the collecting; the dashboard just shows it. Everything stays on the server.</p>
+        </div>
+        <ol class="steps-grid">
+            <li>
+                <h3>A service collects, day and night</h3>
+                <p>The IIS Monitor service samples IIS, Windows and, if you like, SQL Server, whether or not anyone has the dashboard open.</p>
+            </li>
+            <li>
+                <h3>History stays on the server</h3>
+                <p>One averaged row per app pool, site and the server every 10 seconds, kept for 7 days in a local database only Administrators can read.</p>
+            </li>
+            <li>
+                <h3>The dashboard shows it live</h3>
+                <p>IIS Monitor connects to the service through a local, Administrators-only named pipe. Nothing listens on the network.</p>
+            </li>
+        </ol>
+        <p class="actions"><a class="button button-quiet" href="/docs/how-it-works">How IIS Monitor works @Icons.Svg("arrow-right")</a></p>
+    </div>
+</section>
+
+<section class="section">
+    <div class="container">
+        <div class="band">
+            <h2>Up and running in a few minutes</h2>
+            <p>Copy IIS Monitor to your server, run <code>install-service.cmd</code> as administrator and open it from the Start menu. No .NET runtime to install.</p>
+            <div class="actions">
+                <a class="button" href="@Site.DownloadUrl">@(Site.HasDownload ? "Download IIS Monitor" : "Read the install guide") @Icons.Svg("arrow-right")</a>
+                <a class="button button-quiet" href="/faq">Questions? Read the FAQ</a>
+            </div>
+        </div>
+    </div>
+</section>

@@ -1,0 +1,64 @@
+@page "/features/sites"
+@{
+    Layout = "_ArticleLayout";
+}
+
+<h2 id="grid">One row per website</h2>
+<p>The Sites tab lists every IIS website with its traffic and how fast it answers. Requests, bandwidth and response times are measured per site, even when several sites share an app pool.</p>
+
+<dl class="defs">
+    <dt>Site, ID, State</dt>
+    <dd>The site's name and ID as in IIS Manager, and whether it is started (green) or stopped (red).</dd>
+    <dt>App pool</dt>
+    <dd>The pool that runs the site's root application. Its CPU and memory are on the <a href="/features/app-pools">App pools</a> tab.</dd>
+    <dt>Connections</dt>
+    <dd>Current connections to the site, from IIS's <code>Web Service</code> counters.</dd>
+    <dt>Req/sec</dt>
+    <dd>Requests per second.</dd>
+    <dt>Bandwidth sent / recv</dt>
+    <dd>Bytes per second the site sends and receives over HTTP.</dd>
+    <dt>Resp. avg, p95, max</dt>
+    <dd>Average, 95th-percentile and longest response time of the requests that finished during the last update. IIS measures each one as <code>time-taken</code>, from the first byte received to the last byte sent.</dd>
+    <dt>4xx / 5xx</dt>
+    <dd>Client errors (such as 404) and server errors (such as 500) during the last update.</dd>
+    <dt>Response tracing</dt>
+    <dd><em>On</em> when the site sends its log entries to ETW, which is what live response times need.</dd>
+    <dt>Bindings</dt>
+    <dd>Protocol, IP, port and host name of each binding, such as <code>https *:443:shop.contoso.com</code>.</dd>
+</dl>
+
+<p>“idle” in a response-time column means no request finished during that interval; a dash means response times aren't traced for that site yet.</p>
+
+<h2 id="charts">Live charts for the selected site</h2>
+<p>Select a site to see a header with its ID, state, app pool, bindings and whether response times are traced, followed by five live charts:</p>
+<ul>
+    <li><strong>Requests/sec</strong>.</li>
+    <li><strong>Response time</strong>: average, p95 and maximum. The average tells you about typical visitors; p95 tells you about the slowest one in twenty; the maximum catches the outliers.</li>
+    <li><strong>Connections</strong>.</li>
+    <li><strong>Bandwidth</strong>: bytes sent and received per second.</li>
+    <li><strong>Errors/sec</strong>: 4xx and 5xx responses per second.</li>
+</ul>
+<p>As on every live tab, <span class="ui">Chart window</span> picks the last 2, 5, 15 or 30 minutes or the last hour, and hovering a chart shows the exact values at that moment.</p>
+
+<h2 id="response-times">Turn on live response times</h2>
+<p>IIS Monitor doesn't read log files. Instead, IIS sends each finished request to Event Tracing for Windows (ETW), and IIS Monitor reads that stream as it happens. IIS only does this when its log target includes ETW, so the first time you open the dashboard the toolbar may show <span class="ui">Enable response times</span>.</p>
+<ol class="steps">
+    <li>Make sure the IIS <strong>HTTP Logging</strong> role service is installed. In PowerShell: <code>Install-WindowsFeature Web-Http-Logging</code>.</li>
+    <li>Click <span class="ui">Enable response times</span> in the toolbar. IIS Monitor explains what it will change and asks before doing it.</li>
+    <li>It sets the W3C log target to <code>File, ETW</code>, so log files are still written exactly as before, and switches on the log fields <code>s-sitename</code>, <code>cs-uri-stem</code>, <code>sc-status</code> and <code>time-taken</code> if they are off. The change is made in <code>applicationHost.config</code>, for the site defaults and for any site that overrides them.</li>
+    <li>Within a few seconds, the <strong>Response tracing</strong> column shows <em>On</em> and the response-time columns fill in. The button disappears once every site is traced.</li>
+</ol>
+
+<div class="note note-warn">
+    @Icons.Svg("help")
+    <div><p>Sites that use IIS's <strong>central binary logging</strong> can't be traced this way. The <a href="/features/collectors">Collectors</a> tab shows how many sites are traced and how many requests have been seen.</p></div>
+</div>
+
+<h2 id="how-to">How to use it: investigate a slow site</h2>
+<ol class="steps">
+    <li>Sort the grid by <strong>Resp. p95</strong> to find the site whose slowest requests are slowest.</li>
+    <li>Select it and look at the Response time chart: a gap between average and p95 means some requests are much slower than the rest, often a particular page or a query.</li>
+    <li>Check the Errors/sec chart. A rise in 5xx errors at the same time often explains it.</li>
+    <li>Open the <a href="/features/requests">Requests</a> tab, choose the site and sort by <strong>Time taken</strong> to see exactly which URLs are slow and who requested them.</li>
+    <li>If the site's pool is busy in SQL Server, the <a href="/features/database">Database</a> tab shows which queries.</li>
+</ol>

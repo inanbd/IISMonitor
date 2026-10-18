@@ -1,0 +1,103 @@
+@page "/features/app-pools"
+@{
+    Layout = "_ArticleLayout";
+}
+
+<h2 id="grid">One row per application pool</h2>
+<p>The App pools tab lists every application pool on the server with everything it is using right now. Click a column header to sort by it, for example by <strong>CPU</strong> to put the busiest pool on top. Columns can be resized and dragged into a different order.</p>
+
+<dl class="defs">
+    <dt>State</dt>
+    <dd><em>Started</em> in green, anything else (such as <em>Stopped</em>) in red.</dd>
+    <dt>Processes</dt>
+    <dd>How many processes belong to the pool: its <code>w3wp.exe</code> worker processes plus every process they started. “2 (1 w3wp)” means one worker process and one child, such as <code>dotnet.exe</code> for an out-of-process ASP.NET Core app. An idle pool that has no worker process yet shows 0, not an error.</dd>
+    <dt>CPU</dt>
+    <dd>Share of the whole machine (all cores), like Task Manager.</dd>
+    <dt>Private memory</dt>
+    <dd>Committed memory of all the pool's processes: the number IIS's private-memory recycling limit watches.</dd>
+    <dt>Working set</dt>
+    <dd>Physical RAM the pool's processes are using now.</dd>
+    <dt>Disk read / write</dt>
+    <dd>Bytes per second read from and written to disk, from the kernel's file I/O trace (the data Resource Monitor uses). If that trace is off, Windows' per-process I/O counters are used instead.</dd>
+    <dt>Network sent / recv</dt>
+    <dd>Website traffic of the pool's sites plus the pool's own outbound traffic. See <a href="/features/overview#network">how network is counted</a>.</dd>
+    <dt>DB conns</dt>
+    <dd>Open TCP connections from the pool's processes to SQL Server ports: 1433, any port a local SQL Server listens on, and ports you add in <a href="/features/settings">Settings</a>.</dd>
+    <dt>DB sessions</dt>
+    <dd>Sessions SQL Server itself reports for the pool's processes, with how many are active. Needs a SQL Server connection string; see <a href="/features/database">Database</a>.</dd>
+    <dt>DB load (1 min)</dt>
+    <dd>Average number of the pool's queries running in SQL Server at once over the last minute. 1.00 means one query busy all the time.</dd>
+    <dt>Req/sec, Active</dt>
+    <dd>Requests per second and requests being processed right now, from IIS's <code>W3SVC_W3WP</code> counters.</dd>
+    <dt>Queue</dt>
+    <dd>Requests waiting in the pool's HTTP.sys request queue. Anything above zero for long means the pool can't keep up.</dd>
+    <dt>Resp. avg, Resp. p95</dt>
+    <dd>Average and 95th-percentile response time of the requests the pool's sites finished during the last update, from IIS's log stream. “idle” means no request finished in that interval.</dd>
+</dl>
+
+<p>A dash (—) means the value isn't available. The <a href="/features/collectors">Collectors</a> tab always says why, for example when kernel tracing is off or no SQL Server connection string is set.</p>
+
+<h2 id="processes">The selected pool and its processes</h2>
+<p>Select a pool to see its details below the grid. The header line names the pool with its state, .NET CLR version (or “No managed code”), pipeline mode, identity and the applications it serves, for example:</p>
+<pre><code>Shop — Started · No managed code · Integrated · ApplicationPoolIdentity · Shop/, Shop/checkout</code></pre>
+<p>Under it, a small grid lists every process in the pool:</p>
+<dl class="defs">
+    <dt>PID, Process</dt>
+    <dd>Process ID and executable name. IDs change every time the pool recycles; IIS Monitor re-maps them on every update.</dd>
+    <dt>Role</dt>
+    <dd><em>Worker</em> for a <code>w3wp.exe</code>, or <em>Child of 5124</em> for a process started by one.</dd>
+    <dt>CPU, memory</dt>
+    <dd>CPU share, private memory and working set of that process alone.</dd>
+    <dt>Threads, Handles</dt>
+    <dd>Climbing numbers here often point to a thread or handle leak.</dd>
+    <dt>Disk, Outbound</dt>
+    <dd>The process's disk I/O and the network traffic it creates itself (website traffic belongs to HTTP.sys, so per-process network is outbound only).</dd>
+    <dt>DB</dt>
+    <dd>Its SQL Server TCP connections and, when configured, its sessions: “48 TCP · 46 sessions”.</dd>
+    <dt>Started</dt>
+    <dd>When the process started: a recent time tells you the pool just recycled.</dd>
+</dl>
+
+<h2 id="charts">Twelve live charts for the selected pool</h2>
+<p>Below the processes, live charts cover the last 2 minutes to 1 hour (<span class="ui">Chart window</span>). Hover any chart to read exact values.</p>
+<div class="table-wrap">
+    <table>
+        <thead><tr><th scope="col">Chart</th><th scope="col">Lines</th></tr></thead>
+        <tbody>
+            <tr><td>CPU</td><td>CPU %</td></tr>
+            <tr><td>Memory</td><td>Private memory, working set</td></tr>
+            <tr><td>Disk I/O</td><td>Disk read, disk write</td></tr>
+            <tr><td>Network</td><td>Site traffic sent and received, outbound sent and received</td></tr>
+            <tr><td>Database connections</td><td>TCP connections, SQL Server sessions, active sessions</td></tr>
+            <tr><td>Database load</td><td>Running queries, of which on CPU, blocked queries, queries it blocks</td></tr>
+            <tr><td>Slow queries finished</td><td>Queries over the slow threshold that finished</td></tr>
+            <tr><td>Requests/sec</td><td>Requests per second</td></tr>
+            <tr><td>Response time</td><td>Average, p95, maximum</td></tr>
+            <tr><td>Active requests &amp; queue</td><td>Active requests, queue length</td></tr>
+            <tr><td>Errors/sec</td><td>4xx and 5xx responses per second</td></tr>
+            <tr><td>Processes</td><td>Number of processes in the pool</td></tr>
+        </tbody>
+    </table>
+</div>
+
+<h2 id="how-to">How to use it</h2>
+<h3>Find a memory leak before IIS recycles the pool</h3>
+<ol class="steps">
+    <li>Sort the grid by <strong>Private memory</strong> and select the largest pool.</li>
+    <li>Set <span class="ui">Chart window</span> to <em>Last hour</em> and watch the Memory chart. A line that only climbs, never falling back after garbage collection, is worth investigating.</li>
+    <li>Check the processes grid: if the memory sits in a child process (<code>dotnet.exe</code>, <code>php-cgi.exe</code>, <code>node.exe</code>), that is the app to profile.</li>
+    <li>Open <a href="/features/history">History</a> for the pool over 24 hours or 7 days to see whether memory resets at each recycle.</li>
+</ol>
+
+<h3>Tell a slow app from a slow database</h3>
+<ol class="steps">
+    <li>Select the pool and compare its <strong>Response time</strong> chart with its <strong>Database load</strong> chart.</li>
+    <li>If response times rise together with database load, and most of the load is <em>waiting</em> rather than on CPU, the time is going into SQL Server: open the <a href="/features/database">Database</a> tab to see which queries.</li>
+    <li>If response times rise while CPU is high and database load is flat, the time is being spent in the app itself.</li>
+    <li>A growing <strong>Queue</strong> with few <strong>Active</strong> requests points to a pool that is starved of worker threads or stuck.</li>
+</ol>
+
+<div class="note">
+    @Icons.Svg("help")
+    <div><p><strong>Why not per site?</strong> CPU, memory, disk and database connections belong to an app pool: IIS runs each pool in its own processes, and when several sites share one, there is no way to split those numbers between them. Requests, bandwidth and response times are still per site, on the <a href="/features/sites">Sites</a> tab.</p></div>
+</div>

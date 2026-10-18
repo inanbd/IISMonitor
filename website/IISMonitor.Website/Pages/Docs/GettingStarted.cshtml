@@ -1,0 +1,73 @@
+@page "/docs/getting-started"
+@{
+    Layout = "_ArticleLayout";
+}
+
+<h2 id="requirements">Requirements</h2>
+<ul>
+    <li><strong>Windows Server 2022 or 2025</strong> with IIS 10, x64.</li>
+    <li><strong>Administrator rights</strong> to install the service and to open the dashboard.</li>
+    <li>No .NET runtime: the published build is self-contained.</li>
+</ul>
+<p>Optional, for some features:</p>
+<div class="table-wrap">
+    <table>
+        <thead><tr><th scope="col">For</th><th scope="col">You need</th></tr></thead>
+        <tbody>
+            <tr><td>Response times, the request log and the auto blacklist</td><td>The IIS <strong>HTTP Logging</strong> role service: <code>Install-WindowsFeature Web-Http-Logging</code></td></tr>
+            <tr><td>Blocking visitors that come through a proxy or CDN</td><td>The IIS <strong>IP and Domain Restrictions</strong> role service: <code>Install-WindowsFeature Web-IP-Security</code></td></tr>
+            <tr><td>The Database tab</td><td>A SQL Server login with <code>VIEW SERVER STATE</code> (or <code>VIEW SERVER PERFORMANCE STATE</code> on SQL Server 2022 and later)</td></tr>
+        </tbody>
+    </table>
+</div>
+
+<h2 id="get">Get the files</h2>
+@if (Site.HasDownload)
+{
+    <p><a href="@Site.DownloadUrl">Download IIS Monitor</a> and extract it. You get a <code>publish</code> folder with <code>Service</code>, <code>Dashboard</code> and the install scripts.</p>
+    <h3 id="build">Or build it from source</h3>
+}
+<p>Build IIS Monitor on any machine with the <a href="https://dotnet.microsoft.com/download/dotnet/10.0" rel="noopener">.NET 10 SDK</a>. In the repository folder:</p>
+<pre><code>dotnet build
+dotnet test
+scripts\publish.cmd</code></pre>
+<p><code>publish.cmd</code> produces a self-contained <code>publish</code> folder, <code>publish\Service</code>, <code>publish\Dashboard</code> and the install scripts, ready to copy to a server.</p>
+<div class="note">
+    @Icons.Svg("help")
+    <div><p>The <code>.cmd</code> files run the matching PowerShell script with <code>-ExecutionPolicy Bypass</code> for that one run, so they work even where Windows blocks PowerShell scripts (“running scripts is disabled on this system”) without changing the machine's policy. By hand, that is <code>powershell -ExecutionPolicy Bypass -File .\scripts\publish.ps1</code>.</p></div>
+</div>
+
+<h2 id="install">Install on an IIS server</h2>
+<ol class="steps">
+    <li>Copy the <code>publish</code> folder to the server.</li>
+    <li>Right-click <code>install-service.cmd</code> and choose <strong>Run as administrator</strong>, or run it from an elevated command prompt. It copies IIS Monitor to <code>C:\Program Files\IISMonitor</code>, registers and starts the <code>IISMonitor</code> Windows service (automatic start, restarts on failure) and adds an <strong>IIS Monitor</strong> shortcut to the Start menu.</li>
+    <li>Open <strong>IIS Monitor</strong> from the Start menu. It asks for administrator rights.</li>
+</ol>
+
+<h2 id="first-run">First-run checklist</h2>
+<p>The live view works straight away. Three one-time steps turn on everything else:</p>
+<ol class="steps">
+    <li><strong>Response times.</strong> If the toolbar shows <span class="ui">Enable response times</span>, click it once. IIS then also sends its log to ETW; log files are still written. <a href="/features/sites#response-times">Details</a></li>
+    <li><strong>Request log.</strong> On the <a href="/features/requests">Requests</a> tab, click <span class="ui">Set up IIS logging…</span> to log client IPs, methods and user agents, and header fields on sites behind a proxy. <a href="/features/requests#setup">Details</a></li>
+    <li><strong>SQL Server.</strong> Add a connection string in <a href="/features/settings#sql">Settings</a> and grant <code>VIEW SERVER STATE</code> to see database load and slow queries per app pool. <a href="/features/database#setup">Details</a></li>
+</ol>
+<p>Then glance at the <a href="/features/collectors">Collectors</a> tab: every source should have a green check mark.</p>
+
+<h2 id="update">Update</h2>
+<p>Publish the new version and run <code>install-service.cmd</code> again. It stops the service, replaces the files and starts it again; settings and history are kept.</p>
+<p>If the dashboard is newer than the service, the Requests and Database tabs say so, because an older service can't provide their data. Running <code>install-service.cmd</code> from the new version fixes it.</p>
+
+<h2 id="uninstall">Uninstall</h2>
+<p>Run <code>uninstall-service.cmd</code> as administrator. It removes the service, the program files and the Start menu shortcut, and lifts every block the auto blacklist made (its firewall rules and the IIS IP restrictions it added), since nothing would expire them once the service is gone. IIS logging settings are left as they are.</p>
+<p>History and settings in <code>%ProgramData%\IISMonitor</code> are kept unless you add <code>-RemoveData</code>:</p>
+<pre><code>uninstall-service.cmd -RemoveData</code></pre>
+
+<h2 id="standalone">Running without the service (standalone mode)</h2>
+<p>You can also run <code>IISMonitor.exe</code> without installing the service, for example to try it out. The dashboard then runs the same collector itself and a banner says so:</p>
+<ul>
+    <li>The live view works as usual.</li>
+    <li>History is recorded only while the window is open.</li>
+    <li>The auto blacklist shows requests and rules but doesn't block.</li>
+    <li>The Database tab connects to SQL Server as your own Windows account.</li>
+</ul>
+<p>If the service is installed but stopped, the banner offers a <span class="ui">Start the service</span> button.</p>

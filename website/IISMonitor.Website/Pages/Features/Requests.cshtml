@@ -1,0 +1,123 @@
+@page "/features/requests"
+@{
+    Layout = "_ArticleLayout";
+}
+
+<h2 id="overview">A live log of every request</h2>
+<p>The Requests tab lists every request IIS finishes, from any IP, as it happens: when it came in, who sent it, which site it hit, what kind of request it was, how IIS answered and how long that took. Above the list, a chart shows requests per second by kind, and next to it are the <a href="#top-ips">Top IPs</a>, the <a href="/features/auto-blacklist">blocked IPs and the blacklist rules</a>.</p>
+
+<h2 id="setup">Set up IIS logging (once)</h2>
+<p>The request log reads the same ETW stream as live response times, with a few more fields. Click <span class="ui">Set up IIS logging…</span> on the tab (the button appears while some sites aren't set up; <span class="ui">IIS logging…</span> is always there). IIS Monitor shows each site's current state and asks before it changes <code>applicationHost.config</code>.</p>
+
+<screenshot name="iis-logging" variant="dialog" alt="Set up IIS logging dialog: request details for all sites and a per-site choice of header fields">The <em>Set up IIS logging</em> dialog: request details for all sites, header fields per site.</screenshot>
+
+<dl class="defs">
+    <dt>Request details, all sites</dt>
+    <dd>Sends log entries to ETW (log files are still written) with the client IP, method, bytes sent, user agent and substatus fields. These are standard W3C fields, most of them on by default, and they cost almost nothing. They are needed for everything on this tab and for the auto blacklist.</dd>
+    <dt>Header fields, per site</dt>
+    <dd>Optional. Logs the request headers <code>X-Requested-With</code>, <code>Sec-Fetch-Dest</code> and <code>Sec-Fetch-Mode</code> and the response's <code>Content-Type</code> and <code>Content-Disposition</code>, for accurate request kinds, plus <code>X-Forwarded-For</code>, to see and block visitors behind a reverse proxy, load balancer or CDN.</dd>
+</dl>
+
+<div class="note note-warn">
+    @Icons.Svg("help")
+    <div>
+        <p>Header fields are IIS <em>custom log fields</em>. On a site that logs them, IIS turns off kernel-mode caching, which costs some CPU on sites serving a lot of static files, and log file names get an <code>_x</code> suffix. Turn them on only where you need them: sites behind a proxy, or sites where you want exact page / API / download counts.</p>
+        <p>IIS Monitor keeps its <code>X-Forwarded-For</code> field last on purpose. If another custom field is added after it later, the tab says so and <span class="ui">Set up IIS logging…</span> puts it back. Sites created later need setting up again.</p>
+    </div>
+</div>
+
+<h2 id="status">Status lines</h2>
+<p>Two lines at the top keep you informed: how many sites log request details and header fields (and whether ETW dropped events under extreme load, or proxied requests arrived without a usable <code>X-Forwarded-For</code>), and what the auto blacklist is doing, for example <em>23 IPs blocked in the firewall · 2 in IIS · 0 pending · next IIS update 14:33:10</em>.</p>
+
+<h2 id="filters">Filter by method, kind, IP, URL and site</h2>
+<p>Filters apply to the request list and to the “Matching” column of Top IPs.</p>
+<dl class="defs">
+    <dt>Method</dt>
+    <dd>Tick <span class="ui">GET</span>, <span class="ui">POST</span> and <span class="ui">Other methods</span> (PUT, DELETE, HEAD, OPTIONS…).</dd>
+    <dt>Kind</dt>
+    <dd>Tick the kinds of request to show; untick <span class="ui">Static content</span>, for instance, to hide CSS, scripts and images.</dd>
+    <dt>IP</dt>
+    <dd>An address (<code>203.0.113.5</code>), a network (<code>203.0.113.0/24</code>) or the start of one (<code>203.0.</code>). Empty for any IP.</dd>
+    <dt>URL contains</dt>
+    <dd>Any part of the path, such as <code>/api/</code> or <code>login</code>.</dd>
+    <dt>Site</dt>
+    <dd>One site, or all sites.</dd>
+</dl>
+<p><span class="ui">Clear filters</span> resets them all; <span class="ui">Refresh</span> reloads the list now.</p>
+
+<h3 id="kinds">How each request's kind is decided</h3>
+<div class="table-wrap">
+    <table>
+        <thead><tr><th scope="col">Kind</th><th scope="col">What counts</th></tr></thead>
+        <tbody>
+            <tr><td>Page view</td><td>A page a browser navigated to.</td></tr>
+            <tr><td>XHR / API</td><td><code>fetch()</code> and XMLHttpRequest calls, JSON and other API responses, <code>/api/</code> paths, WebSockets and SignalR. Page changes made by script (Turbo, htmx, Blazor enhanced navigation) count here too.</td></tr>
+            <tr><td>Static content</td><td>CSS, JavaScript, images, fonts, audio and video.</td></tr>
+            <tr><td>Download</td><td>Files the browser saves: <code>Content-Disposition: attachment</code>, PDF, ZIP, Office documents, installers…</td></tr>
+            <tr><td>Other</td><td><code>robots.txt</code>, CORS preflights, scanner probes and anything else.</td></tr>
+        </tbody>
+    </table>
+</div>
+<p>When a site logs header fields, kinds come from the browser's <code>Sec-Fetch-*</code> headers and the response's content type (browsers send <code>Sec-Fetch-*</code> to HTTPS sites only). Otherwise they are worked out from the method, status and URL: the extension, <code>/api/</code> and similar.</p>
+
+<h2 id="chart">Requests per second by kind</h2>
+<p>The chart shows page views, XHR/API calls, static content, downloads and other requests per second across all sites. The same chart is on the <a href="/features/server">Server</a> tab, and the server's history keeps it, so you can see how the mix changes over a day or a week. A sudden wall of <em>Other</em> is usually a scanner.</p>
+
+<h2 id="list">The request list</h2>
+<p>The list shows the newest requests that match the filters. The Windows service keeps the last 20,000 requests in memory; the line above the list says how many match and since when the log goes back.</p>
+<dl class="defs">
+    <dt>Time, Client IP</dt>
+    <dd>When the request finished and who sent it. A visitor behind a trusted proxy is shown with the proxy: <code>198.51.100.61 (via 10.20.0.4)</code>.</dd>
+    <dt>Site, Method, Kind</dt>
+    <dd>Which site, which HTTP method and which kind of request.</dd>
+    <dt>Status</dt>
+    <dd>The HTTP status with its IIS substatus, such as <code>404</code> or <code>403.503</code>.</dd>
+    <dt>Time taken, Sent</dt>
+    <dd>How long IIS took and how many bytes it sent back.</dd>
+    <dt>URL</dt>
+    <dd>The path. Query strings are never logged.</dd>
+    <dt>Rule, User agent</dt>
+    <dd>The blacklist rule the URL matches, if any, and the client's user agent.</dd>
+</dl>
+<p>Error responses are shown in orange, and requests to a blacklist rule's URLs in red, so probes stand out. Rows can be sorted by any column.</p>
+
+<p>Select a row to act on it:</p>
+<ul>
+    <li><span class="ui">Freeze list</span> stops the list from moving while you read it.</li>
+    <li><span class="ui">Show only this IP</span> puts the request's IP in the filter.</li>
+    <li><span class="ui">Block this IP…</span> opens the <a href="/features/auto-blacklist#manual">Block an IP</a> dialog with the address filled in.</li>
+    <li><span class="ui">Make a rule from this URL</span> adds a draft rule for the request's path to <a href="/features/auto-blacklist#rules">Blacklist rules</a>; adjust it and click <span class="ui">Save</span>.</li>
+</ul>
+
+<h2 id="top-ips">Top IPs</h2>
+<screenshot name="top-ips" alt="Top IPs list ranking client IP addresses by requests, with page views, API calls, static files, errors, rule hits and block state">Top IPs over the last hour: the scanner at the top has only hit rule URLs and is already blocked.</screenshot>
+<p>The <strong>Top IPs</strong> tab adds up requests per IP over the last 5 minutes, hour or 24 hours, busiest first:</p>
+<dl class="defs">
+    <dt>Matching, All</dt>
+    <dd>Requests that fit the method and kind filters, and all requests.</dd>
+    <dt>Pages, XHR/API, Static, Downloads</dt>
+    <dd>The IP's requests by kind. A real browser fetches static files along with pages; a client with only pages, or only API calls, is often a bot.</dd>
+    <dt>GET, POST</dt>
+    <dd>Requests by method. Many POSTs and no GETs to a login URL is a classic brute-force pattern.</dd>
+    <dt>4xx / 5xx, Rule hits</dt>
+    <dd>Error responses, and requests to blacklist rule URLs.</dd>
+    <dt>Blocked</dt>
+    <dd>Whether the IP is blocked, how and until when, such as <em>Firewall, in 23 h</em>.</dd>
+    <dt>Last seen, Last URL, User agent</dt>
+    <dd>The IP's most recent request.</dd>
+</dl>
+<p>Select an IP and click <span class="ui">Show this IP's requests</span> to see everything it asked for, or <span class="ui">Block this IP…</span> to block it.</p>
+
+<h2 id="how-to">How to use it: deal with a suspicious client</h2>
+<ol class="steps">
+    <li>Open <strong>Top IPs</strong>, pick <em>Last hour</em>, and look for IPs with many 4xx errors, rule hits, or only one kind of request.</li>
+    <li>Select one and click <span class="ui">Show this IP's requests</span> to see exactly which URLs it asked for, and how IIS answered.</li>
+    <li>If it is probing for things your sites don't have, click <span class="ui">Block this IP…</span>, or select one of its requests and click <span class="ui">Make a rule from this URL</span> so the next scanner is blocked automatically.</li>
+</ol>
+
+<h2 id="limits">What the request log can't see</h2>
+<ul>
+    <li>Requests HTTP.sys rejects before they reach IIS, such as unknown host names or malformed requests. Those are in the HTTPERR log.</li>
+    <li>Events ETW drops under extreme load. The tab shows how many were lost.</li>
+</ul>
+<p>The request log, Top IPs and rule hit counts are kept in the service's memory only, never written to disk. If the dashboard runs without the service (<a href="/docs/getting-started#standalone">standalone mode</a>), it shows requests but doesn't block.</p>

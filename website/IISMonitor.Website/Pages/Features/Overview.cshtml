@@ -1,0 +1,63 @@
+@page "/features/overview"
+@{
+    Layout = "_ArticleLayout";
+}
+
+<h2 id="what-you-see">What the Overview tab shows</h2>
+<p>The Overview tab is the first thing you see when IIS Monitor opens. It puts every application pool on the same four charts, one line per pool, so the pool that suddenly uses more CPU, memory, requests or bandwidth than the others stands out at a glance.</p>
+
+<dl class="defs">
+    <dt>CPU</dt>
+    <dd>Each pool's share of the whole machine, across all cores, just like the Processes tab in Task Manager. A pool's CPU includes every <code>w3wp.exe</code> it runs (several for a web garden) and every process those start, such as an out-of-process ASP.NET Core app, PHP FastCGI or iisnode.</dd>
+    <dt>RAM</dt>
+    <dd>Either the <strong>working set</strong>, the physical memory the pool is using right now, or <strong>private bytes</strong>, the committed memory that IIS's private-memory recycling limit watches. Switch between them with <span class="ui">RAM shows</span>.</dd>
+    <dt>Requests/sec</dt>
+    <dd>Requests per second handled by the pool, from IIS's own <code>W3SVC_W3WP</code> performance counters.</dd>
+    <dt>Network</dt>
+    <dd>The traffic of the pool's websites plus the outbound traffic its processes create themselves, such as calls to SQL Server or external APIs. See <a href="#network">how network is counted</a> below.</dd>
+</dl>
+
+<p>Each chart's title shows the current total of the pools you have ticked, for example <em>CPU: 52.6 % total</em> or <em>Network: 21.4 MB/s total</em>, so you can see the overall load and each pool's part of it on one screen.</p>
+
+<h2 id="choose-pools">Choose which pools to compare</h2>
+<p>The list on the left, <span class="ui">App pools on the charts</span>, doubles as the legend: each name sits next to its line color and style.</p>
+<ul>
+    <li><strong>Tick or untick a pool</strong> to add it to or remove it from all four charts. The summary under the heading shows how many are shown, such as “10 of 12 shown”.</li>
+    <li><span class="ui">Tick all</span> and <span class="ui">Untick all</span> change every pool at once. Untick everything, then tick the two or three pools you want to compare side by side.</li>
+    <li>Every pool starts ticked, including pools you create later, so a new application never goes unnoticed.</li>
+    <li>The first eight pools get eight distinct colors, chosen to stay apart for color-blind readers. From the ninth pool on, the colors repeat with dashed lines, then dotted lines.</li>
+</ul>
+<p>Your ticks, the colors assigned to each pool and the RAM choice are remembered per Windows user, in <code>%LocalAppData%\IISMonitor\dashboard.json</code>, so the Overview looks the same the next time you open it. The pools ticked here also decide which lines appear on the <a href="/features/database">Database tab's</a> charts.</p>
+
+<h2 id="read-values">Read exact values at any moment</h2>
+<p>Move the mouse over any chart. A crosshair snaps to the nearest sample and a read-out lists every ticked pool's value at that moment, highest first, with the time at the top. That makes it easy to answer “which pool caused that spike?” without guessing between similar colors.</p>
+<p>Right-click a chart to copy it or save it as an image, for a ticket or a post-mortem.</p>
+
+<h2 id="time-window">Set the time window and update speed</h2>
+<ul>
+    <li><span class="ui">Chart window</span> sets how much of the recent past the charts show: the last 2, 5, 15 or 30 minutes, or the last hour.</li>
+    <li><span class="ui">Update every</span> in the toolbar sets how often data is collected and the screen refreshes, from 0.25 seconds to 1 minute. It is a setting of the collector service, so it also sets the resolution of every live chart.</li>
+    <li><span class="ui">Pause</span> freezes the screen while you read it; data keeps being collected in the background. <span class="ui">Resume</span> jumps back to live.</li>
+</ul>
+
+<h2 id="network">How network traffic is counted</h2>
+<p>Incoming website traffic never passes through <code>w3wp.exe</code>. The kernel driver HTTP.sys owns ports 80 and 443, so Windows charges that traffic to the System process. IIS Monitor therefore builds a pool's network total from two sources:</p>
+<ol>
+    <li><strong>Website traffic</strong> from IIS's <code>Web Service</code> performance counters, credited to the pool that runs each site's root application.</li>
+    <li><strong>Outbound traffic</strong> that the pool's own processes create (database calls, API calls), from the kernel's TCP and UDP trace events.</li>
+</ol>
+<p>Loopback traffic between a pool's own processes, for example <code>w3wp.exe</code> relaying requests to an out-of-process ASP.NET Core app, is not counted twice.</p>
+
+<h2 id="how-to">How to use it: find the pool behind a slowdown</h2>
+<ol class="steps">
+    <li>Open IIS Monitor from the Start menu. The Overview tab is already selected.</li>
+    <li>Look at the chart titles for the totals, then for the line that stands out. If too many lines overlap, click <span class="ui">Untick all</span> and tick only the busiest few.</li>
+    <li>Hover the spike to read each pool's value at that moment.</li>
+    <li>Switch to <a href="/features/app-pools">App pools</a> and select that pool to see its processes, queue, response times and database activity.</li>
+    <li>If the problem happened earlier, open <a href="/features/history">History</a> to look at the same pool over hours or days.</li>
+</ol>
+
+<div class="note">
+    @Icons.Svg("help")
+    <div><p><strong>Tip: give each site its own app pool.</strong> CPU, memory, disk and database numbers belong to a pool, not a site, because IIS runs each pool in its own processes. When several sites share a pool, those numbers can't be split between them.</p></div>
+</div>

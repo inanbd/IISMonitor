@@ -1,0 +1,84 @@
+@page "/features/collectors"
+@{
+    Layout = "_ArticleLayout";
+}
+
+<h2 id="why">An empty column always has a reason</h2>
+<p>IIS Monitor combines a dozen data sources, and a few of them depend on how the server is set up: whether IIS sends its log to ETW, whether a kernel trace session is free, whether SQL Server lets IIS Monitor in. Rather than leave you guessing at a dash, the <strong>Collectors</strong> tab lists every source with a green check mark or a red warning and a plain-language status. When any source has a warning, the status bar says so on every tab.</p>
+
+<h2 id="sources">The sources and what to do about a warning</h2>
+<div class="table-wrap">
+    <table>
+        <thead><tr><th scope="col">Source</th><th scope="col">What it provides</th><th scope="col">If it shows a warning</th></tr></thead>
+        <tbody>
+            <tr>
+                <td>Permissions</td>
+                <td>Shown only when IIS Monitor isn't running as administrator.</td>
+                <td>Run the dashboard as administrator (the Start menu shortcut asks for it), or install the service.</td>
+            </tr>
+            <tr>
+                <td>IIS configuration</td>
+                <td>Sites, app pools, applications and bindings: “12 sites, 12 app pools.”</td>
+                <td>Check that IIS is installed and that the account can read <code>applicationHost.config</code>.</td>
+            </tr>
+            <tr>
+                <td>Processes</td>
+                <td>Each pool's worker processes and their children, with CPU, memory, threads and handles.</td>
+                <td>Some processes couldn't be read (access denied or exited); usually a missing administrator right.</td>
+            </tr>
+            <tr>
+                <td>IIS performance counters</td>
+                <td><code>Web Service</code>, <code>W3SVC_W3WP</code> and HTTP request queue counters: requests, connections, bandwidth, active requests, queue.</td>
+                <td>Rebuild the counters with <code>lodctr /R</code> from an elevated prompt, then restart the service.</td>
+            </tr>
+            <tr>
+                <td>Disk &amp; network (kernel ETW)</td>
+                <td>File and TCP/UDP bytes per process, the data Resource Monitor uses.</td>
+                <td>Windows allows up to 8 such system trace sessions at once, and other monitoring tools may be using them. Meanwhile disk falls back to process I/O counters and pool network shows website traffic only.</td>
+            </tr>
+            <tr>
+                <td>SQL Server connections (TCP)</td>
+                <td>Open connections from pool processes to SQL Server ports.</td>
+                <td>Add the port your SQL Server listens on in <a href="/features/settings">Settings</a>.</td>
+            </tr>
+            <tr>
+                <td>SQL Server activity</td>
+                <td>Sessions, database load, blocking and slow queries per pool.</td>
+                <td>“Not set up” until you add a connection string. Otherwise, check that SQL Server can be reached and that the login has <code>VIEW SERVER STATE</code> (<a href="/features/database#setup">how</a>).</td>
+            </tr>
+            <tr>
+                <td>Response times (IIS ETW log)</td>
+                <td>Response time and errors per site and pool: “12 of 12 sites traced; 1,284,551 requests seen.”</td>
+                <td>Click <span class="ui">Enable response times</span> and make sure the HTTP Logging role service is installed (<a href="/features/sites#response-times">details</a>).</td>
+            </tr>
+            <tr>
+                <td>Request log (IIS ETW)</td>
+                <td>Client IP, method, kind and user agent for the Requests tab and the auto blacklist.</td>
+                <td>Use <span class="ui">Set up IIS logging…</span> on the Requests tab. A warning also appears when ETW drops events or when trusted proxies send requests without a usable <code>X-Forwarded-For</code>.</td>
+            </tr>
+            <tr>
+                <td>Auto blacklist</td>
+                <td>Rule mode and how many IPs are blocked in the firewall and in IIS.</td>
+                <td>Read the message: the firewall may be off for the active profile, Group Policy may ignore local rules, or the IIS IP and Domain Restrictions role service may be missing.</td>
+            </tr>
+            <tr>
+                <td>Server CPU &amp; memory</td>
+                <td>Whole-machine CPU and memory, and the local SQL Server process.</td>
+                <td>Rare; the message gives the Windows error.</td>
+            </tr>
+            <tr>
+                <td>History</td>
+                <td>How much history is kept and at what resolution: “Keeping 7 days at 10-second resolution.”</td>
+                <td>The history database couldn't be written; check free disk space and the Application event log.</td>
+            </tr>
+        </tbody>
+    </table>
+</div>
+
+<h2 id="how-to">How to use it</h2>
+<ol class="steps">
+    <li>When the status bar mentions a collector warning, or a column shows a dash, open the <strong>Collectors</strong> tab.</li>
+    <li>Find the source with the red warning and read its message: it names the cause.</li>
+    <li>Fix it as above, then watch the row turn green.</li>
+</ol>
+<p>Service errors are also written to the Windows <strong>Application</strong> event log, source <strong>IISMonitor</strong>. For more symptoms and fixes, see <a href="/docs/troubleshooting">Troubleshooting</a>.</p>

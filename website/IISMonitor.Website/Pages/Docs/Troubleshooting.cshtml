@@ -1,0 +1,52 @@
+@page "/docs/troubleshooting"
+@{
+    Layout = "_ArticleLayout";
+}
+
+<p>Start with the <a href="/features/collectors">Collectors</a> tab: it lists every data source and says why one isn't working. The most common symptoms are below. Service errors are also written to the Windows <strong>Application</strong> event log, source <strong>IISMonitor</strong>.</p>
+
+<h2 id="not-traced">Response times show “not traced”</h2>
+<ul>
+    <li>Click <span class="ui">Enable response times</span> in the toolbar.</li>
+    <li>Make sure the IIS <strong>HTTP Logging</strong> role service is installed: <code>Install-WindowsFeature Web-Http-Logging</code>.</li>
+    <li>Check the Collectors tab: it shows how many sites are traced. Sites that use central binary logging can't be traced.</li>
+    <li>Make sure <em>Live response times</em> is ticked in <a href="/features/settings#tracing">Settings</a>.</li>
+</ul>
+
+<h2 id="network-low">Pool network looks low, or process network shows “—”</h2>
+<p>Kernel tracing is off or failed, so outbound traffic is missing and the pool's network total is website traffic only. Check <em>Disk &amp; network (kernel ETW)</em> on the Collectors tab. Windows allows up to eight such system trace sessions at once, and other monitoring tools may be using them; stopping one frees a slot.</p>
+
+<h2 id="db-zero">DB connections are 0, but the app uses SQL Server</h2>
+<ul>
+    <li>SQL Server may listen on a non-default port: add it under <em>SQL Server ports</em> in <a href="/features/settings#sql">Settings</a>, or tick <em>Also count connections to any port a local SQL Server listens on</em>.</li>
+    <li>The app may use shared memory or named pipes to a local SQL Server, which aren't TCP connections. Add a connection string under <em>SQL Server activity</em>: SQL Server then reports the sessions itself.</li>
+</ul>
+
+<h2 id="standalone">The dashboard says “Standalone mode”</h2>
+<p>The IIS Monitor service isn't running. Click <span class="ui">Start the service</span> in the banner, or check the Application event log for the reason it stopped. If the service isn't installed, run <code>install-service.cmd</code> as administrator (<a href="/docs/getting-started#install">how</a>).</p>
+
+<h2 id="counters">Performance counter columns are empty</h2>
+<p>The Windows performance counter registry may be damaged. From an elevated command prompt, rebuild it and restart the service:</p>
+<pre><code>lodctr /R
+net stop IISMonitor
+net start IISMonitor</code></pre>
+
+<h2 id="no-ips">The Requests tab lists no client IPs or methods</h2>
+<p>Use <span class="ui">Set up IIS logging…</span> on the Requests tab (<a href="/features/requests#setup">details</a>). Sites created later need setting up again.</p>
+
+<h2 id="unknown-via">Visitors behind a proxy show as “unknown (via …)”</h2>
+<p>Add the proxy's address or range to <strong>Trusted proxies</strong> under Blacklist rules, and log header fields on that site with <span class="ui">Set up IIS logging…</span>. IIS Monitor's <code>X-Forwarded-For</code> field must be the last custom field; the tab warns you if it isn't.</p>
+
+<h2 id="not-blocked">Blocks show “Not blocked: …”</h2>
+<p>The message says why. Common causes:</p>
+<ul>
+    <li>Windows Firewall is off for the active network profile, or Group Policy ignores local firewall rules.</li>
+    <li>The IIS <strong>IP and Domain Restrictions</strong> role service is missing, needed to block visitors behind a proxy: <code>Install-WindowsFeature Web-IP-Security</code>.</li>
+</ul>
+<p>Failed blocks are retried every minute, so once the cause is fixed they apply by themselves.</p>
+
+<h2 id="outdated">“The IIS Monitor service is older than this dashboard”</h2>
+<p>The Requests or Database tab needs a newer service. Run <code>install-service.cmd</code> from the new version's folder; it replaces the service and keeps your settings and history.</p>
+
+<h2 id="other-servers">Queries from this server appear under “other servers”</h2>
+<p>A query is matched to this server only when its client reports this computer's name as host name, which is the default. Remove <code>Workstation ID</code> from the app's connection string, or set it to the server's name.</p>

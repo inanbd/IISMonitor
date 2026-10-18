@@ -112,6 +112,12 @@ they work even where Windows blocks PowerShell scripts ("running scripts is disa
 system") without changing the machine's policy. Equivalent by hand:
 `powershell -ExecutionPolicy Bypass -File .\scripts\publish.ps1`.
 
+## Website
+
+`website/` holds the product website, an ASP.NET Core Razor Pages site that describes every feature
+in detail. See [website/README.md](website/README.md) to run it, configure it and replace its
+placeholder screenshots.
+
 ## Install on an IIS server
 
 1. Copy the `publish` folder to the server.

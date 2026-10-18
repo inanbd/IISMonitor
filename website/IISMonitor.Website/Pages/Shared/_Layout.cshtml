@@ -1,0 +1,116 @@
+@{
+    // Registered pages take their metadata from SiteMap; error pages set ViewData["Title"].
+    var current = Site.Page;
+    var title = current is null ? $"{ViewData["Title"]} · {SiteContext.Name}"
+        : current == SiteMap.Home ? current.Title
+        : $"{current.Title} · {SiteContext.Name}";
+    var description = current?.Description ?? ViewData["Description"] as string ?? SiteMap.Home.Description;
+    var canonical = current is null ? null : Site.Absolute(current.Path);
+    var image = Site.SocialImage(current);
+    var imageAlt = current?.ScreenshotAlt ?? SiteMap.Home.ScreenshotAlt;
+    var path = Context.Request.Path.Value ?? "/";
+    string? Current(string prefix) => path.StartsWith(prefix, StringComparison.OrdinalIgnoreCase) ? "page" : null;
+}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>@title</title>
+    <meta name="description" content="@description">
+    @if (canonical is not null)
+    {
+        <link rel="canonical" href="@canonical">
+    }
+    else
+    {
+        <meta name="robots" content="noindex">
+    }
+    <meta name="color-scheme" content="light dark">
+    <meta name="theme-color" content="#1f4e79">
+    <link rel="icon" href="~/favicon.ico" sizes="32x32">
+    <link rel="icon" href="~/favicon.svg" type="image/svg+xml">
+    <link rel="apple-touch-icon" href="~/apple-touch-icon.png">
+    <link rel="stylesheet" href="~/css/site.css" asp-append-version="true">
+    <meta property="og:site_name" content="@SiteContext.Name">
+    <meta property="og:type" content="@(current == SiteMap.Home ? "website" : "article")">
+    <meta property="og:title" content="@(current?.Title ?? title)">
+    <meta property="og:description" content="@description">
+    @if (canonical is not null)
+    {
+        <meta property="og:url" content="@canonical">
+    }
+    <meta property="og:image" content="@image.Url">
+    @if (image.Width is { } width && image.Height is { } height)
+    {
+        <meta property="og:image:width" content="@width">
+        <meta property="og:image:height" content="@height">
+    }
+    <meta property="og:image:alt" content="@imageAlt">
+    <meta name="twitter:card" content="summary_large_image">
+    @if (current is not null)
+    {
+        @Site.JsonLd(Site.StructuredData(current, ViewData["Faq"] as IReadOnlyList<FaqItem>))
+    }
+    <script src="~/js/site.js" asp-append-version="true" defer></script>
+</head>
+<body>
+    <a class="skip-link" href="#main">Skip to content</a>
+
+    <header class="site-header">
+        <div class="container header-inner">
+            <a class="brand" href="/">@Icons.Logo()<span>IIS Monitor</span></a>
+            <nav class="site-nav" aria-label="Main">
+                <a href="/features" aria-current="@Current("/features")">Features</a>
+                <a href="/docs/how-it-works" aria-current="@Current("/docs/how-it-works")">How it works</a>
+                <a href="/docs/getting-started" aria-current="@Current("/docs/getting-started")">Install</a>
+                <a href="/faq" aria-current="@Current("/faq")">FAQ</a>
+                @if (Site.HasSource)
+                {
+                    <a href="@Site.Options.SourceUrl" rel="noopener">Source</a>
+                }
+            </nav>
+            <a class="button button-small header-cta" href="@Site.DownloadUrl">@(Site.HasDownload ? "Download" : "Get started")</a>
+        </div>
+    </header>
+
+    <main id="main">
+        @RenderBody()
+    </main>
+
+    <footer class="site-footer">
+        <div class="container footer-grid">
+            <div class="footer-brand">
+                <a class="brand" href="/">@Icons.Logo()<span>IIS Monitor</span></a>
+                <p>Real-time and historical monitoring for IIS websites, application pools and the SQL Server behind them, on Windows Server 2022 and 2025.</p>
+            </div>
+            <nav aria-label="Features">
+                <h2>Features</h2>
+                <ul>
+                    @foreach (var feature in SiteMap.FeaturePages)
+                    {
+                        <li><a href="@feature.Path">@feature.NavTitle</a></li>
+                    }
+                </ul>
+            </nav>
+            <nav aria-label="Guides">
+                <h2>Guides</h2>
+                <ul>
+                    @foreach (var guide in SiteMap.GuidePages)
+                    {
+                        <li><a href="@guide.Path">@guide.NavTitle</a></li>
+                    }
+                    @if (Site.HasSource)
+                    {
+                        <li><a href="@Site.Options.SourceUrl" rel="noopener">Source code</a></li>
+                    }
+                </ul>
+            </nav>
+        </div>
+        <div class="container footer-legal">
+            <p>© @DateTime.UtcNow.Year @(string.IsNullOrWhiteSpace(Site.Options.Publisher) ? SiteContext.Name : Site.Options.Publisher)</p>
+            <p>Microsoft, Windows Server, IIS and SQL Server are trademarks of the Microsoft group of companies. IIS Monitor is not affiliated with or endorsed by Microsoft.</p>
+        </div>
+    </footer>
+</body>
+</html>

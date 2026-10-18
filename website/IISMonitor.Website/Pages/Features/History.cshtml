@@ -1,0 +1,54 @@
+@page "/features/history"
+@{
+    Layout = "_ArticleLayout";
+}
+
+<h2 id="always-recording">Always recording, even with the dashboard closed</h2>
+<p>The IIS Monitor Windows service collects data around the clock and writes one row per app pool, per site and for the server every 10 seconds. Each row holds the averages of the live samples in that step, plus the maximums for CPU, connections and response time, so a short spike isn't averaged away. Seven days are kept, and older rows are deleted every hour.</p>
+<p>Because a service does the recording, history has no gaps when nobody is logged on or the dashboard is closed. (Without the service, the dashboard records history only while it is open.)</p>
+
+<h2 id="browse">Browse the history</h2>
+<ol class="steps">
+    <li>Open the <strong>History</strong> tab.</li>
+    <li>Choose what to show: <span class="ui">App pool</span>, <span class="ui">Site</span> or <span class="ui">Server</span>.</li>
+    <li>Pick the pool or site from the second list.</li>
+    <li>Choose a range: the last hour, 6 hours, 24 hours, 3 days or 7 days. The charts load straight away; <span class="ui">Refresh</span> brings them up to date.</li>
+</ol>
+<p>Each kind shows the same charts as its live tab: the twelve <a href="/features/app-pools#charts">app pool charts</a>, the five <a href="/features/sites#charts">site charts</a> or the three <a href="/features/server#charts">server charts</a>.</p>
+
+<h2 id="zoom">Zoom in on a moment</h2>
+<p>History charts can be panned and zoomed by dragging, so you can open a whole week and then close in on the ten minutes around an incident. Hovering shows the date and time with every line's value; right-clicking copies or saves the chart as an image.</p>
+
+<h2 id="points">How long ranges are drawn</h2>
+<p>A chart shows up to 1,500 points. Longer ranges merge rows into wider points: the last 7 days becomes points of about 6.7 minutes, and the status line says so, for example <em>1,500 points, each covering 6.7 minutes</em>. When rows are merged, averages stay averages, while maximums and p95 response times show the worst value inside each point, so peaks remain visible however far you zoom out.</p>
+
+<h2 id="what-is-kept">What is kept</h2>
+<div class="table-wrap">
+    <table>
+        <thead><tr><th scope="col">For</th><th scope="col">Metrics</th></tr></thead>
+        <tbody>
+            <tr><td>Each app pool</td><td>CPU (average and maximum), private memory, working set, processes, threads, handles, disk read and write, site traffic and outbound traffic, SQL Server connections (average and maximum), sessions and active sessions, database load and its CPU part, blocked and blocking queries, slow queries finished, requests/sec, active requests, queue length, response time (average, p95, maximum), 4xx and 5xx per second.</td></tr>
+            <tr><td>Each site</td><td>Requests/sec, connections (average and maximum), bytes sent and received, response time (average, p95, maximum), 4xx and 5xx per second.</td></tr>
+            <tr><td>The server</td><td>CPU (average and maximum), memory used and total, SQL Server CPU and memory, and requests/sec by kind.</td></tr>
+            <tr><td>Slow queries</td><td>Every query over the slow threshold, with literal values removed (see <a href="/features/database#slow-queries">Database</a>).</td></tr>
+            <tr><td>Blocks</td><td>IP blocks and their history (see <a href="/features/auto-blacklist#blocked">Auto blacklist</a>).</td></tr>
+        </tbody>
+    </table>
+</div>
+
+<h2 id="storage">Storage and retention</h2>
+<p>History lives in a SQLite database on the server, <code>%ProgramData%\IISMonitor\history.db</code>, in a folder only Administrators and SYSTEM can open.</p>
+<ul>
+    <li>At the default 10-second resolution, each app pool or site takes about 60,000 rows per week.</li>
+    <li>Measured: 10 app pools and 10 sites with every metric populated take about 260 MB for 7 days, and a 7-day chart loads in about 0.15 seconds.</li>
+    <li>A 30-second resolution cuts the size to a third.</li>
+</ul>
+<p>Change the resolution (5 seconds to 5 minutes) and the number of days to keep in <a href="/features/settings">Settings</a>.</p>
+
+<h2 id="how-to">How to use it: what happened last night?</h2>
+<ol class="steps">
+    <li>Choose <span class="ui">Server</span> and <em>Last 24 hours</em> to find when CPU, memory or the request mix changed.</li>
+    <li>Switch to <span class="ui">App pool</span> and step through the pools to see which one moved at that time.</li>
+    <li>Drag to zoom into the incident and read the exact values: CPU maximum, queue length, p95 response time, database load.</li>
+    <li>If database load rose, open the <a href="/features/database#slow-queries">slow queries</a> for that range to see what ran.</li>
+</ol>

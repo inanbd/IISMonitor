@@ -1,0 +1,85 @@
+@page "/docs/how-it-works"
+@{
+    Layout = "_ArticleLayout";
+}
+
+<h2 id="architecture">Two parts: a service and a dashboard</h2>
+<p>IIS Monitor has two programs, both on the IIS server. A Windows service does all the collecting, and the dashboard shows what it collects.</p>
+
+<div class="diagram" role="img" aria-label="Diagram: the IIS Monitor service reads IIS configuration, process data, performance counters, ETW traces, the TCP table and SQL Server; it writes history to a local SQLite database and sends live snapshots over a local named pipe to the dashboard.">
+    <div class="diagram-row">
+        <div class="diagram-node"><strong>IIS configuration</strong><span>sites, pools, bindings</span></div>
+        <div class="diagram-node"><strong>Processes</strong><span>w3wp.exe and children</span></div>
+        <div class="diagram-node"><strong>IIS counters</strong><span>requests, queues</span></div>
+        <div class="diagram-node"><strong>ETW traces</strong><span>kernel I/O, IIS log</span></div>
+        <div class="diagram-node"><strong>TCP table, SQL Server</strong><span>connections, DMVs</span></div>
+    </div>
+    <div class="diagram-arrow">every update (0.25 s – 1 min)</div>
+    <div class="diagram-row">
+        <div class="diagram-node primary"><strong>IIS Monitor service</strong><span>Windows service, LocalSystem, always running</span></div>
+    </div>
+    <div class="diagram-arrow">history and live snapshots</div>
+    <div class="diagram-row">
+        <div class="diagram-node"><strong>history.db</strong><span>SQLite in %ProgramData%\IISMonitor</span></div>
+        <div class="diagram-node"><strong>Named pipe</strong><span>local, Administrators and SYSTEM only</span></div>
+        <div class="diagram-node primary"><strong>IIS Monitor dashboard</strong><span>IISMonitor.exe: live views, history, settings</span></div>
+    </div>
+</div>
+
+<dl class="defs">
+    <dt>The service</dt>
+    <dd><code>IISMonitor</code> runs as LocalSystem and starts with Windows. On every update it reads the IIS configuration, the process table, performance counters, two ETW trace sessions, the TCP table and, if configured, SQL Server. It writes history to <code>%ProgramData%\IISMonitor\history.db</code>, runs the auto blacklist, and streams live snapshots to the dashboard.</dd>
+    <dt>The dashboard</dt>
+    <dd><code>IISMonitor.exe</code> is a Windows desktop app. It connects to the service through a local named pipe that only Administrators and SYSTEM can open. If the service isn't running, it runs the same collector itself (<a href="/docs/getting-started#standalone">standalone mode</a>) so the live view still works.</dd>
+</dl>
+
+<h2 id="sources">What is measured, and how</h2>
+<div class="table-wrap">
+    <table>
+        <thead><tr><th scope="col">Metric</th><th scope="col">Per</th><th scope="col">Source</th></tr></thead>
+        <tbody>
+            <tr><td>CPU %, private memory, working set, threads, handles</td><td>App pool, process</td><td>Win32 process APIs on each <code>w3wp.exe</code> and every process it started</td></tr>
+            <tr><td>Process count</td><td>App pool</td><td><code>w3wp.exe</code> per pool (several for web gardens) plus child processes: out-of-process ASP.NET Core, PHP FastCGI, iisnode…</td></tr>
+            <tr><td>Disk read/write bytes/sec</td><td>App pool, process</td><td>Kernel ETW file I/O events, the data Resource Monitor uses; process I/O counters if ETW is off</td></tr>
+            <tr><td>Network sent/received bytes/sec</td><td>App pool</td><td>The HTTP traffic of the pool's sites (IIS <code>Web Service</code> counters) plus the pool's own outbound traffic</td></tr>
+            <tr><td>Outbound sent/received bytes/sec</td><td>App pool, process</td><td>Kernel ETW TCP/UDP events: traffic the pool's processes create themselves</td></tr>
+            <tr><td>Bandwidth, requests/sec, connections</td><td>Site</td><td>IIS <code>Web Service</code> performance counters</td></tr>
+            <tr><td>Requests/sec, active requests</td><td>App pool</td><td>IIS <code>W3SVC_W3WP</code> performance counters</td></tr>
+            <tr><td>Request queue length</td><td>App pool</td><td><code>HTTP Service Request Queues</code> performance counters</td></tr>
+            <tr><td>SQL Server connections</td><td>App pool, process</td><td>Established TCP connections from the pool's processes to SQL Server ports</td></tr>
+            <tr><td>SQL Server sessions (active / idle)</td><td>App pool, process</td><td>Optional: <code>sys.dm_exec_sessions</code>, matched by client process ID</td></tr>
+            <tr><td>Database load, blocking, slow queries</td><td>App pool</td><td>Optional: running requests in <code>sys.dm_exec_requests</code>, sampled every second</td></tr>
+            <tr><td>SQL Server CPU and memory</td><td>Server</td><td>The local <code>sqlservr.exe</code> process</td></tr>
+            <tr><td>Response time avg / p95 / max, 4xx and 5xx</td><td>Site, app pool</td><td>IIS's <code>Microsoft-Windows-IIS-Logging</code> ETW provider, including <code>time-taken</code></td></tr>
+            <tr><td>Each request: client IP, method, kind, URL, status, time, size, user agent</td><td>Request, IP</td><td>The same ETW events with extra W3C fields, and optional header fields</td></tr>
+            <tr><td>Server CPU and memory</td><td>Server</td><td><code>GetSystemTimes</code>, <code>GlobalMemoryStatusEx</code></td></tr>
+        </tbody>
+    </table>
+</div>
+
+<h2 id="worth-knowing">Things worth knowing</h2>
+<h3 id="pool-not-site">CPU, memory, disk and database connections belong to an app pool</h3>
+<p>IIS runs each application pool in its own processes. If several sites share one pool, those numbers can't be split between them. Requests, bandwidth and response times are still per site. One pool per site gives the clearest picture.</p>
+
+<h3 id="http-sys">Website traffic doesn't go through w3wp.exe</h3>
+<p>The kernel driver HTTP.sys owns ports 80 and 443, so Windows charges incoming website traffic to the System process. That is why website traffic comes from IIS's counters. A pool's network total adds its sites' website traffic, credited to the pool running each site's root application, to the outbound traffic its own processes create. Per-process numbers are outbound only, and loopback traffic between a pool's own processes isn't counted twice.</p>
+
+<h3 id="etw">Live response times come from IIS's ETW log target</h3>
+<p>IIS can write its W3C log to files, to ETW, or both. <span class="ui">Enable response times</span> sets the target to <code>File, ETW</code> and turns on the fields <code>s-sitename</code>, <code>cs-uri-stem</code>, <code>sc-status</code> and <code>time-taken</code> if they are off. Log files are written as before. This needs the HTTP Logging role service; sites using central binary logging can't be traced.</p>
+
+<h3 id="tcp">Counting SQL Server connections over TCP sees network connections</h3>
+<p>If an app talks to a SQL Server on the same machine over shared memory or named pipes, there is no TCP connection to count. Add a connection string in Settings: SQL Server then reports the sessions itself, active and idle, and the Database tab lights up.</p>
+
+<h3 id="cpu-percent">CPU % is a share of the whole machine</h3>
+<p>Like Task Manager's Processes tab, 100 % means every core is busy. A single-threaded loop on a 16-core server shows about 6 %.</p>
+
+<h3 id="recycles">Idle pools and recycles are handled</h3>
+<p>Pools without a worker process yet show 0 processes, not an error. Process IDs change on every recycle; IIS Monitor re-maps them on every update.</p>
+
+<h2 id="footprint">A light footprint</h2>
+<ul>
+    <li>Everything it reads already exists in Windows and IIS: process counters, performance counters and ETW events. Nothing is injected into your applications.</li>
+    <li>SQL Server is asked one light query per sample; nothing is installed there and no trace is started.</li>
+    <li>Nothing listens on the network; the dashboard and service talk over a local named pipe.</li>
+    <li>Kernel and IIS tracing can each be switched off in <a href="/features/settings#tracing">Settings</a>.</li>
+</ul>

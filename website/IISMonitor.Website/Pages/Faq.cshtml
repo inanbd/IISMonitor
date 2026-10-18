@@ -1,0 +1,17 @@
+@page "/faq"
+@{
+    Layout = "_ArticleLayout";
+    ViewData["Faq"] = Faq.Items;
+}
+
+<div class="faq-list">
+    @foreach (var item in Faq.Items)
+    {
+        <details id="@item.Id">
+            <summary><h2>@item.Question</h2></summary>
+            <div class="answer">@Html.Raw(item.AnswerHtml)</div>
+        </details>
+    }
+</div>
+
+<p>Still have a question? The <a href="/docs/troubleshooting">troubleshooting guide</a> covers missing numbers and failed blocks, and <a href="/docs/how-it-works">How it works</a> explains where every metric comes from.</p>

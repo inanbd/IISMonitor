@@ -1,0 +1,86 @@
+@{
+    // Feature and guide pages: breadcrumb, heading, main screenshot, side navigation and previous/next links.
+    Layout = "_Layout";
+    var current = Site.Page ?? throw new InvalidOperationException($"{Context.Request.Path} is not registered in {nameof(SiteMap)}.");
+    var (previous, next) = SiteMap.Neighbours(current);
+    var trail = Site.Trail(current);
+
+    void NavGroup(string heading, IReadOnlyList<SitePage> pages)
+    {
+        <h2>@heading</h2>
+        <ul>
+            @foreach (var item in pages)
+            {
+                <li><a href="@item.Path" aria-current="@(item == current ? "page" : null)">@Icons.Svg(item.Icon)<span>@item.NavTitle</span></a></li>
+            }
+        </ul>
+    }
+
+    void Navigation()
+    {
+        NavGroup(SiteMap.Features, SiteMap.FeaturePages);
+        NavGroup(SiteMap.Guides, SiteMap.GuidePages);
+    }
+}
+
+<div class="container">
+    <nav class="crumbs" aria-label="Breadcrumb">
+        <ol>
+            @for (var i = 0; i < trail.Count; i++)
+            {
+                <li>
+                    @if (i < trail.Count - 1)
+                    {
+                        <a href="@trail[i].Path">@trail[i].Name</a>
+                    }
+                    else
+                    {
+                        <span aria-current="page">@trail[i].Name</span>
+                    }
+                </li>
+            }
+        </ol>
+    </nav>
+
+    <header class="page-head">
+        <p class="eyebrow">@Icons.Svg(current.Icon)<span>@(current.Section == SiteMap.Features ? $"Feature · {current.NavTitle}" : current.NavTitle)</span></p>
+        <h1>@current.Heading</h1>
+        <p class="lead">@current.Description</p>
+    </header>
+
+    @if (current.Screenshot is not null)
+    {
+        <screenshot name="@current.Screenshot" alt="@current.ScreenshotAlt" variant="hero" priority="true" />
+    }
+</div>
+
+<div class="container article-grid">
+    <details class="sidenav-mobile">
+        <summary>All features and guides</summary>
+        <nav aria-label="Features and guides">@{ Navigation(); }</nav>
+    </details>
+
+    <aside class="sidenav">
+        <nav aria-label="Features and guides">@{ Navigation(); }</nav>
+    </aside>
+
+    <article class="prose">
+        @RenderBody()
+
+        @if (previous is not null || next is not null)
+        {
+            <nav class="pager" aria-label="More @current.Section.ToLowerInvariant()">
+                @if (previous is not null)
+                {
+                    <a class="pager-prev" href="@previous.Path" rel="prev"><span>@Icons.Svg("arrow-left") Previous</span><strong>@previous.NavTitle</strong></a>
+                }
+                @if (next is not null)
+                {
+                    <a class="pager-next" href="@next.Path" rel="next"><span>Next @Icons.Svg("arrow-right")</span><strong>@next.NavTitle</strong></a>
+                }
+            </nav>
+        }
+    </article>
+
+    <nav class="toc" aria-label="On this page" data-toc hidden></nav>
+</div>

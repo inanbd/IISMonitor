@@ -1,0 +1,122 @@
+@page "/features/auto-blacklist"
+@{
+    Layout = "_ArticleLayout";
+}
+
+<h2 id="rules">How a rule works</h2>
+<p>A blacklist rule says: <em>when an IP requests URLs that match these patterns <strong>X times within N minutes</strong>, block it for <strong>H hours</strong>.</em> For example, three requests within ten minutes to <code>/wp-login.php; /xmlrpc.php; /.env; /.git/*</code> on a site that has none of those files is a vulnerability scanner, never a customer.</p>
+<p>Rules live on the <a href="/features/requests">Requests</a> tab, under <strong>Blacklist rules</strong>. Each row is one rule:</p>
+<dl class="defs">
+    <dt>On</dt>
+    <dd>Untick to keep a rule without enforcing it.</dd>
+    <dt>Name</dt>
+    <dd>Shown in the request list's <em>Rule</em> column and in the reason for each block.</dd>
+    <dt>URL patterns</dt>
+    <dd>One or more URL paths, separated by <code>;</code>.</dd>
+    <dt>Hits</dt>
+    <dd>How many matching requests trigger a block (3 by default).</dd>
+    <dt>Within (min)</dt>
+    <dd>The time window those hits must fall in (10 minutes by default).</dd>
+    <dt>Block (hours)</dt>
+    <dd>How long the block lasts (24 hours by default). 0 means until you lift it.</dd>
+    <dt>Sites</dt>
+    <dd>Comma-separated site names to limit the rule to. Empty means all sites.</dd>
+</dl>
+<p>Use <span class="ui">Add rule</span> and <span class="ui">Remove rule</span> to edit the list, then <span class="ui">Save</span>. <span class="ui">Revert</span> throws away unsaved changes.</p>
+
+<h3 id="patterns">Pattern syntax</h3>
+<ul>
+    <li>Patterns match the URL path, without the query string, ignoring case.</li>
+    <li><code>*</code> matches anything, including <code>/</code>; <code>?</code> matches one character.</li>
+    <li>Examples: <code>/wp-login.php</code>, <code>/.git/*</code>, <code>*.env</code>, <code>/admin/*</code>.</li>
+</ul>
+<p>To keep real visitors safe, patterns that would catch ordinary traffic, such as <code>/*</code> or anything that matches the home page, are refused when you save. A rule that blocks after a single request gets a warning: a typo or an old bookmark would be enough to block a real visitor.</p>
+
+<h3 id="scanner-paths">Add common scanner paths</h3>
+<p><span class="ui">Add common scanner paths</span> adds one ready-made rule listing paths that only vulnerability scanners ask for: WordPress (<code>/wp-login.php</code>, <code>/xmlrpc.php</code>, <code>/wp-admin/*</code> and more), <code>.env</code> files, <code>/.git/*</code>, <code>/.aws/*</code>, phpMyAdmin, <code>/cgi-bin/*</code>, PHPUnit, Spring Boot's <code>/actuator/*</code> and common router exploits. Use it only if none of your sites serve any of these.</p>
+
+<h2 id="modes">Off, Watch only or Block</h2>
+<p>The <span class="ui">Mode</span> box above the rules decides what happens when an IP trips a rule:</p>
+<dl class="defs">
+    <dt>Off</dt>
+    <dd>Rules aren't checked.</dd>
+    <dt>Watch only</dt>
+    <dd>Rules are checked, and IPs that would be blocked are listed as <em>Watch: would be blocked</em>, but nothing is blocked. Use it to try new rules on real traffic.</dd>
+    <dt>Block</dt>
+    <dd>IPs that trip a rule are blocked.</dd>
+</dl>
+
+<h2 id="how">How an IP is blocked</h2>
+<p>IIS Monitor picks the right tool for each visitor.</p>
+<div class="grid-2">
+    <div class="mini">
+        <h3>Direct visitors: Windows Firewall</h3>
+        <p>A firewall rule in the group “IIS Monitor” (up to 1,000 addresses per rule) drops all of the IP's traffic, on every port. Its open IPv4 connections are closed too, unless you turn that off. Firewall blocks take effect at once.</p>
+    </div>
+    <div class="mini">
+        <h3>Behind a proxy or CDN: IIS IP restrictions</h3>
+        <p>When the visitor comes through a <a href="#proxies">trusted proxy</a>, blocking the proxy's address would block everyone. Instead, IIS Monitor adds a deny entry to IIS IP restrictions in proxy mode, where IIS also checks <code>X-Forwarded-For</code>.</p>
+    </div>
+</div>
+
+<p>Blocking through IIS needs the <strong>IP and Domain Restrictions</strong> role service: <code>Install-WindowsFeature Web-IP-Security</code>. Because every change to IIS IP restrictions rewrites <code>applicationHost.config</code>, which restarts ASP.NET Core apps on the server and uses up one of the configuration history snapshots IIS keeps, IIS changes are batched: at most every 5 minutes by default, set by <span class="ui">Write IIS changes at most every (seconds)</span>.</p>
+
+<p>IIS Monitor is careful with your IIS configuration:</p>
+<ul>
+    <li>It turns on proxy mode itself only when no other IP restrictions exist. Proxy mode also applies existing rules to the addresses in <code>X-Forwarded-For</code>, so on a site that only lets its CDN in, it could lock visitors out. In that case the Blocked IPs list says so and you decide.</li>
+    <li>It never removes or changes entries it didn't add, and never puts a deny above an allow entry that covers the address.</li>
+    <li>It doesn't write to IIS Shared Configuration.</li>
+    <li>It never blocks private addresses (<code>10.x</code>, <code>192.168.x</code>…) found in <code>X-Forwarded-For</code> in IIS, since other visitors' requests can pass through them.</li>
+</ul>
+
+<h2 id="never">Who is never blocked</h2>
+<ul>
+    <li>Loopback and the server's own addresses.</li>
+    <li>Your <strong>allow-list</strong>: addresses and networks you enter, one per line, such as your office, monitoring service or partners.</li>
+    <li>Your <strong>trusted proxies</strong>.</li>
+</ul>
+<p>Requests IIS has already turned away, such as <code>403.503</code> from an IP restriction, don't count toward a rule again.</p>
+
+<h2 id="proxies">Trusted proxies</h2>
+<p>Enter the addresses or ranges of the load balancers, reverse proxies or CDN in front of IIS under <strong>Trusted proxies</strong>, and log header fields on those sites (<a href="/features/requests#setup">Set up IIS logging</a>). For their requests, IIS Monitor takes the visitor to be the right-most address in <code>X-Forwarded-For</code> that isn't a trusted proxy, so a client can't name someone else by adding a fake address of its own. <code>X-Forwarded-For</code> from anyone else is ignored.</p>
+
+<h2 id="blocked">The Blocked IPs list</h2>
+<screenshot name="blocked-ips" alt="Blocked IPs list showing each address, its state, whether it was blocked in the firewall or IIS, the rule and hit count, and when the block ends">Current blocks, with lifted and expired ones shown in grey.</screenshot>
+<p><strong>Blocked IPs</strong> lists current blocks, and, with <span class="ui">Show lifted and expired</span> ticked, past ones too:</p>
+<dl class="defs">
+    <dt>State</dt>
+    <dd><em>Blocked (firewall)</em>, <em>Blocked (IIS)</em>, <em>Blocking…</em>, <em>Waiting for the next IIS update</em>, <em>Watch: would be blocked</em>, <em>Lifted</em> or <em>Expired</em>. <em>Not blocked: …</em>, in red, says what went wrong, for example the firewall being off for the active profile; failed blocks are retried every minute.</dd>
+    <dt>How</dt>
+    <dd><em>Firewall</em> or <em>IIS (proxy)</em>.</dd>
+    <dt>Why</dt>
+    <dd>The rule and its hit count, or “By hand” and your note.</dd>
+    <dt>Since, Ends</dt>
+    <dd>When the block started and when it ends: “in 23 h”, “in 6 days” or “never (until lifted)”.</dd>
+    <dt>Site, URL</dt>
+    <dd>The site and URL of the request that triggered it.</dd>
+</dl>
+<p>Blocks are stored in the history database. They survive restarts and expire on time even while the service is stopped. Select one and click <span class="ui">Unblock</span> to lift it at once.</p>
+
+<h2 id="manual">Block an IP by hand</h2>
+<screenshot name="block-ip" variant="dialog" alt="Block an IP address dialog with fields for the address, duration, method and an optional note">The <em>Block an IP address</em> dialog.</screenshot>
+<p>Click <span class="ui">Block an IP…</span> on the Blocked IPs list, or <span class="ui">Block this IP…</span> on a request or a Top IPs row, then choose:</p>
+<ul>
+    <li><strong>For how long</strong>: 1 hour, 24 hours, 7 days, 30 days or until you unblock it.</li>
+    <li><strong>How</strong>: automatic (the firewall, or IIS if the visitor came through a trusted proxy), Windows Firewall, or IIS IP restrictions.</li>
+    <li><strong>Note</strong>: an optional reason, shown in the <em>Why</em> column.</li>
+</ul>
+
+<h2 id="rollout">How to use it: roll out rules safely</h2>
+<ol class="steps">
+    <li>Make sure every site logs request details (<a href="/features/requests#setup">Set up IIS logging</a>), and header fields on sites behind a proxy.</li>
+    <li>Enter your office and monitoring addresses in the allow-list, and your load balancer or CDN ranges under trusted proxies.</li>
+    <li>Add rules: <span class="ui">Add common scanner paths</span>, plus your own, such as 20 POSTs to <code>/account/login</code> within 5 minutes.</li>
+    <li>Set <span class="ui">Mode</span> to <em>Watch only</em> and click <span class="ui">Save</span>. Leave it running for a day.</li>
+    <li>Check <strong>Blocked IPs</strong>: every <em>Watch: would be blocked</em> entry should be someone you are happy to block. If not, tighten the rule.</li>
+    <li>Switch <span class="ui">Mode</span> to <em>Block</em> and save.</li>
+</ol>
+
+<div class="note">
+    @Icons.Svg("help")
+    <div><p>Blocking is done by the IIS Monitor Windows service. When the dashboard runs on its own (standalone mode), it shows requests and rules but doesn't block.</p></div>
+</div>

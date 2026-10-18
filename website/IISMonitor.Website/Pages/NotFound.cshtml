@@ -1,0 +1,21 @@
+@page "/not-found"
+@{
+    ViewData["Title"] = "Page not found";
+    ViewData["Description"] = "The page you were looking for doesn't exist.";
+    // Requested directly, this page is still a 404, never a soft 404.
+    if (Response.StatusCode == StatusCodes.Status200OK)
+        Response.StatusCode = StatusCodes.Status404NotFound;
+}
+
+<section class="error-page">
+    <div class="container">
+        <p class="code">404</p>
+        <h1>This page doesn't exist</h1>
+        <p class="lead">It may have moved, or the address has a typo. These are good places to continue:</p>
+        <div class="actions">
+            <a class="button" href="/">Home</a>
+            <a class="button button-quiet" href="/features">All features</a>
+            <a class="button button-quiet" href="/docs/getting-started">Install guide</a>
+        </div>
+    </div>
+</section>

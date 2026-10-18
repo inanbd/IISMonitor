@@ -1,0 +1,51 @@
+@page "/features/settings"
+@{
+    Layout = "_ArticleLayout";
+}
+
+<h2 id="open">Open the settings</h2>
+<p>Click <span class="ui">Settings…</span> at the right of the toolbar. Settings belong to the collector service and are saved in <code>%ProgramData%\IISMonitor\settings.json</code>, readable only by Administrators and SYSTEM because it can hold SQL Server connection strings. In standalone mode they are saved to the same file, so they apply to the service too once it is installed.</p>
+
+<h2 id="sampling">Sampling and history</h2>
+<dl class="defs">
+    <dt>Live update every</dt>
+    <dd>How often data is collected and the screen refreshes: 0.25, 0.5, 1, 2, 5, 10 or 30 seconds, or 1 minute. One second is the default. This also sets the resolution of the live charts. The same choice is in the toolbar as <span class="ui">Update every</span>.</dd>
+    <dt>History resolution</dt>
+    <dd>How often a history row is written: 5, 10 or 30 seconds, 1 minute or 5 minutes. 10 seconds is the default; 30 seconds cuts the database to a third of the size.</dd>
+    <dt>Keep history for (days)</dt>
+    <dd>How long history is kept; 7 days by default. At 10-second resolution that is roughly 60,000 rows per app pool or site.</dd>
+</dl>
+
+<h2 id="sql">SQL Server connections</h2>
+<dl class="defs">
+    <dt>SQL Server ports</dt>
+    <dd>Comma-separated ports to count connections to, such as <code>1433, 50123</code>. Connections are counted from the Windows TCP table: open connections from each app pool's processes to these ports.</dd>
+    <dt>Also count connections to any port a local SQL Server listens on</dt>
+    <dd>Finds the ports of named instances and non-default ports on this machine automatically.</dd>
+    <dt>SQL Server activity</dt>
+    <dd>One connection string per line, one per SQL Server, for database load, sessions and slow queries per app pool, such as <code>Server=.;Integrated Security=true;TrustServerCertificate=true</code>. The login needs <code>VIEW SERVER STATE</code>; see <a href="/features/database#setup">how to grant it</a>.</dd>
+    <dt>Slow query: longer than (seconds)</dt>
+    <dd>Queries running longer than this are recorded as slow queries. 2 seconds by default.</dd>
+    <dt>Ask SQL Server every (seconds)</dt>
+    <dd>1 to 10. Each sample is one light query to SQL Server; 1 second gives the steadiest database load.</dd>
+</dl>
+<div class="note">
+    @Icons.Svg("lock")
+    <div><p><strong>Prefer Integrated Security.</strong> The service runs as LocalSystem: it signs in to a local SQL Server as <code>NT AUTHORITY\SYSTEM</code> and to a remote one as the computer account (<code>DOMAIN\SERVER$</code>), so no password is stored anywhere.</p></div>
+</div>
+
+<h2 id="tracing">Tracing</h2>
+<dl class="defs">
+    <dt>Per-process disk and network bytes (kernel ETW)</dt>
+    <dd>The kernel trace behind per-process disk I/O and outbound network traffic. Without it, disk falls back to process I/O counters and pool network shows website traffic only.</dd>
+    <dt>Live response times (IIS ETW log stream)</dt>
+    <dd>The IIS log stream behind response times, errors and the request log. Without it, those columns stay empty.</dd>
+</dl>
+
+<h2 id="elsewhere">Settings found elsewhere</h2>
+<ul>
+    <li><strong>Toolbar:</strong> <span class="ui">Update every</span>, <span class="ui">Pause</span> / <span class="ui">Resume</span> and <span class="ui">Enable response times</span>.</li>
+    <li><strong>Overview tab:</strong> which pools are on the charts, their colors and <span class="ui">RAM shows</span>, remembered per Windows user in <code>%LocalAppData%\IISMonitor\dashboard.json</code>.</li>
+    <li><strong>Every live tab:</strong> <span class="ui">Chart window</span>, from the last 2 minutes to the last hour.</li>
+    <li><strong>Requests tab:</strong> IIS logging per site (<a href="/features/requests#setup">Set up IIS logging…</a>), and, under <a href="/features/auto-blacklist">Blacklist rules</a>, the rule mode, the rules, the allow-list, trusted proxies, how often IIS changes are written (300 seconds by default) and whether to close a blocked IP's open IPv4 connections.</li>
+</ul>

@@ -1,0 +1,43 @@
+@page "/features/server"
+@{
+    Layout = "_ArticleLayout";
+}
+
+<h2 id="charts">Three charts for the whole machine</h2>
+<dl class="defs">
+    <dt>CPU</dt>
+    <dd>Whole-server CPU, read from Windows' system times, with the local SQL Server process (<code>sqlservr.exe</code>) as a separate line. When the server line rises and SQL Server's doesn't, the extra work is in IIS or elsewhere.</dd>
+    <dt>Memory</dt>
+    <dd>Memory in use and total physical memory, plus SQL Server's own share. SQL Server deliberately keeps memory it has used, so a large flat SQL Server line is normal.</dd>
+    <dt>Requests/sec by kind</dt>
+    <dd>Page views, XHR/API calls, static content, downloads and other requests per second, across all sites, from IIS's log stream. See <a href="/features/requests#kinds">how kinds are decided</a>.</dd>
+</dl>
+<p>Pick the time span with <span class="ui">Chart window</span> and hover a chart to read exact values. All three are also kept in the server's <a href="/features/history">history</a>.</p>
+
+<h2 id="tiles">Summary tiles on every tab</h2>
+<p>Six tiles at the top of the window stay visible whichever tab you are on:</p>
+<dl class="defs">
+    <dt>Server CPU</dt>
+    <dd>CPU use of the whole machine.</dd>
+    <dt>Server memory</dt>
+    <dd>Memory in use of the total, such as “38.6 GB of 64.0 GB”.</dd>
+    <dt>Requests / sec (all sites)</dt>
+    <dd>The sum of every site's requests per second.</dd>
+    <dt>Active requests</dt>
+    <dd>Requests being processed right now, across all app pools.</dd>
+    <dt>SQL Server connections</dt>
+    <dd>Sessions reported by SQL Server, or TCP connections when no connection string is set, plus the app pools' total database load when the Database tab is set up: “193 sessions · load 6.43”.</dd>
+    <dt>Avg response (all sites)</dt>
+    <dd>The average response time across all sites, weighted by their requests. “not traced” means response times aren't turned on yet; “idle” means no request finished in the last interval.</dd>
+</dl>
+
+<h2 id="status-bar">The status bar and the toolbar</h2>
+<p>The status bar at the bottom shows when the screen was last updated and how often it updates, for example <em>Updated 14:29:59 · every 1 second</em>, and adds <em>· 1 collector warning(s), see the Collectors tab</em> when a data source has a problem.</p>
+<p>The toolbar shows the server's name and a badge saying where the data comes from: the IIS Monitor service, or the dashboard itself in standalone mode. When the dashboard can't reach the service, a banner says so, with a <span class="ui">Start the service</span> button when the service is installed but stopped.</p>
+
+<h2 id="how-to">How to use it</h2>
+<ul>
+    <li><strong>Is the whole server short of CPU?</strong> If the server CPU line sits near 100 % while no app pool on the <a href="/features/overview">Overview</a> stands out, the load is spread out or outside IIS; check the SQL Server line next.</li>
+    <li><strong>Is it running out of memory?</strong> Compare memory in use with the total. If it is close and SQL Server holds most of it, consider capping SQL Server's <em>max server memory</em>.</li>
+    <li><strong>Did the traffic mix change?</strong> A jump in <em>Other</em> requests usually means a scanner; a jump in XHR/API calls often follows a front-end release.</li>
+</ul>

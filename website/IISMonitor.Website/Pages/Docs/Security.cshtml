@@ -1,0 +1,52 @@
+@page "/docs/security"
+@{
+    Layout = "_ArticleLayout";
+}
+
+<h2 id="where">Where IIS Monitor keeps its data</h2>
+<div class="table-wrap">
+    <table>
+        <thead><tr><th scope="col">What</th><th scope="col">Where</th></tr></thead>
+        <tbody>
+            <tr><td>Settings, including SQL Server connection strings and blacklist rules</td><td><code>%ProgramData%\IISMonitor\settings.json</code></td></tr>
+            <tr><td>History, slow queries and IP blocks</td><td><code>%ProgramData%\IISMonitor\history.db</code> (SQLite)</td></tr>
+            <tr><td>Dashboard preferences (Overview ticks, colors, RAM choice)</td><td><code>%LocalAppData%\IISMonitor\dashboard.json</code>, per Windows user</td></tr>
+            <tr><td>The request log, Top IPs and rule hit counts</td><td>The service's memory only</td></tr>
+            <tr><td>Service errors</td><td>The Windows <strong>Application</strong> event log, source <strong>IISMonitor</strong></td></tr>
+        </tbody>
+    </table>
+</div>
+<p>When IIS Monitor creates <code>%ProgramData%\IISMonitor</code>, it restricts access to Administrators and SYSTEM, because the settings can contain SQL Server connection strings.</p>
+
+<h2 id="never-stored">What is never stored</h2>
+<ul>
+    <li><strong>URL query strings.</strong> The request log keeps paths only.</li>
+    <li><strong>SQL literal values.</strong> Statements are stored with values replaced by <code>?</code>: <code>WHERE Email = 'x@y.com'</code> becomes <code>WHERE Email = ?</code>, double-quoted values too.</li>
+    <li><strong>Requests on disk.</strong> The request log lives in memory and is gone when the service stops. Lifted and expired blocks are deleted along with the rest of the history when it ages out.</li>
+</ul>
+
+<h2 id="network">Nothing listens on the network</h2>
+<p>The dashboard talks to the service over a local named pipe that only Administrators and SYSTEM can open. IIS Monitor opens no port and sends no data off the server: there is no cloud service, no telemetry and no account to register. The only connections it makes are to the SQL Servers you configure.</p>
+
+<h2 id="sql-access">SQL Server access</h2>
+<ul>
+    <li>Prefer <code>Integrated Security=true</code> so no password is stored. The service runs as LocalSystem and signs in to a local SQL Server as <code>NT AUTHORITY\SYSTEM</code> and to a remote one as the computer account, <code>DOMAIN\SERVER$</code>.</li>
+    <li>The login needs only <code>VIEW SERVER STATE</code>, or <code>VIEW SERVER PERFORMANCE STATE</code> on SQL Server 2022 and later. IIS Monitor reads dynamic management views; it doesn't read your tables, create objects or start traces.</li>
+</ul>
+
+<h2 id="iis-changes">Changes IIS Monitor makes, and only when asked</h2>
+<div class="table-wrap">
+    <table>
+        <thead><tr><th scope="col">Action</th><th scope="col">What changes</th></tr></thead>
+        <tbody>
+            <tr><td><span class="ui">Enable response times</span></td><td>IIS W3C log target becomes <code>File, ETW</code>; four log fields are switched on if off. Asks first.</td></tr>
+            <tr><td><span class="ui">Set up IIS logging…</span></td><td>Standard W3C fields for all sites; optional custom header fields per site. Asks first.</td></tr>
+            <tr><td>Blocking a direct visitor</td><td>A Windows Firewall rule in the group “IIS Monitor”.</td></tr>
+            <tr><td>Blocking a visitor behind a trusted proxy</td><td>A deny entry in IIS IP restrictions, batched, never above an allow entry covering the address, and never in Shared Configuration.</td></tr>
+        </tbody>
+    </table>
+</div>
+<p>Uninstalling removes every block IIS Monitor made; IIS logging settings are left as they are.</p>
+
+<h2 id="size">How big the history gets</h2>
+<p>About 60,000 rows per app pool or site per week at 10-second resolution. Measured: 10 pools and 10 sites with every metric populated take about 260 MB for 7 days, and a 7-day chart query takes about 0.15 seconds. A 30-second resolution cuts the size to a third. Old rows are deleted every hour.</p>

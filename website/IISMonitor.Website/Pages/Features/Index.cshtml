@@ -1,0 +1,79 @@
+@page "/features"
+@{
+    var current = SiteMap.FeatureIndex;
+}
+
+<div class="container">
+    <nav class="crumbs" aria-label="Breadcrumb">
+        <ol>
+            <li><a href="/">Home</a></li>
+            <li><span aria-current="page">Features</span></li>
+        </ol>
+    </nav>
+    <header class="page-head">
+        <p class="eyebrow">@Icons.Svg(current.Icon)<span>Features</span></p>
+        <h1>@current.Heading</h1>
+        <p class="lead">IIS Monitor is one window with eight tabs and a settings dialog. Each page below explains one of them in detail: what every column and chart means, where the numbers come from and how to use them.</p>
+    </header>
+</div>
+
+<section class="section" aria-label="All features">
+    <div class="container">
+        <ul class="cards">
+            @foreach (var feature in SiteMap.FeaturePages)
+            {
+                <li>
+                    <div class="card">
+                        <span class="card-icon">@Icons.Svg(feature.Icon)</span>
+                        <h2 class="card-title"><a href="@feature.Path">@feature.NavTitle</a></h2>
+                        <p>@feature.Summary</p>
+                        <span class="more" aria-hidden="true">Read more @Icons.Svg("arrow-right")</span>
+                    </div>
+                </li>
+            }
+        </ul>
+    </div>
+</section>
+
+<section class="section section-soft" aria-labelledby="window-title">
+    <div class="container split">
+        <div>
+            <p class="eyebrow">@Icons.Svg("grid")<span>The main window</span></p>
+            <h2 id="window-title">Always visible: the toolbar, the tiles and the status bar</h2>
+            <p class="lead">Whatever tab you are on, the top of the window shows the server's vital signs and the bottom tells you how fresh they are.</p>
+            <ul class="checks">
+                <li>@Icons.Svg("check")<span><strong>Toolbar:</strong> the server name, whether data comes from the service or standalone mode, <span class="ui">Update every</span>, <span class="ui">Pause</span>, <span class="ui">Enable response times</span> and <span class="ui">Settings…</span>.</span></li>
+                <li>@Icons.Svg("check")<span><strong>Tiles:</strong> server CPU, server memory, requests per second and active requests across all sites, SQL Server connections or sessions with the database load, and the average response time.</span></li>
+                <li>@Icons.Svg("check")<span><strong>Status bar:</strong> the time of the last update, the update interval and how many collectors have a warning.</span></li>
+            </ul>
+        </div>
+        <screenshot name="overview" alt="IIS Monitor main window with the toolbar, summary tiles, tabs and status bar" />
+    </div>
+</section>
+
+<section class="section" aria-labelledby="tabs-title">
+    <div class="container">
+        <div class="section-head">
+            <h2 id="tabs-title">Live, history or setup: which tab to open</h2>
+        </div>
+        <div class="table-wrap prose-table">
+            <table>
+                <thead>
+                    <tr><th scope="col">You want to…</th><th scope="col">Open</th></tr>
+                </thead>
+                <tbody>
+                    <tr><td>See which app pool is busy right now</td><td><a href="/features/overview">Overview</a></td></tr>
+                    <tr><td>Drill into one pool's processes, memory or queue</td><td><a href="/features/app-pools">App pools</a></td></tr>
+                    <tr><td>Check a site's response times and errors</td><td><a href="/features/sites">Sites</a></td></tr>
+                    <tr><td>See who is sending requests, and what kind</td><td><a href="/features/requests">Requests</a></td></tr>
+                    <tr><td>Block an IP, or let rules do it</td><td><a href="/features/auto-blacklist">Requests › Blocked IPs and Blacklist rules</a></td></tr>
+                    <tr><td>Find the queries slowing an app down</td><td><a href="/features/database">Database</a></td></tr>
+                    <tr><td>Watch the machine and the local SQL Server</td><td><a href="/features/server">Server</a></td></tr>
+                    <tr><td>Look back at last night or last week</td><td><a href="/features/history">History</a></td></tr>
+                    <tr><td>Understand why a number is missing</td><td><a href="/features/collectors">Collectors</a></td></tr>
+                    <tr><td>Change intervals, retention or SQL Server access</td><td><a href="/features/settings">Settings</a></td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</section>
