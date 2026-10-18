@@ -48,6 +48,14 @@ public sealed class SiteContext(IOptions<SiteOptions> options, IHttpContextAcces
     /// <summary>Where to report problems: the repository's GitHub Issues, when the source is on GitHub.</summary>
     public string? IssuesUrl => SourceIsGitHub ? Options.SourceUrl.TrimEnd('/') + "/issues" : null;
 
+    public bool HasLicense => !string.IsNullOrWhiteSpace(Options.License);
+
+    /// <summary>"MIT License", from the License setting.</summary>
+    public string LicenseName => Options.License.EndsWith("License", StringComparison.OrdinalIgnoreCase) ? Options.License : Options.License + " License";
+
+    /// <summary>The LICENSE file in the repository, when the source is on GitHub.</summary>
+    public string? LicenseUrl => HasLicense && SourceIsGitHub ? Options.SourceUrl.TrimEnd('/') + "/blob/HEAD/LICENSE" : null;
+
     /// <summary>The GitHub mark for a GitHub repository, a code icon otherwise.</summary>
     public IHtmlContent SourceIcon(string cssClass = "icon") => SourceIsGitHub ? Icons.GitHub(cssClass) : Icons.Svg("code", cssClass);
 
@@ -96,6 +104,12 @@ public sealed class SiteContext(IOptions<SiteOptions> options, IHttpContextAcces
                 app["downloadUrl"] = Options.DownloadUrl;
             if (HasSource)
                 app["sameAs"] = new[] { Options.SourceUrl };
+            if (HasLicense)
+            {
+                app["license"] = LicenseUrl ?? LicenseName;
+                app["isAccessibleForFree"] = true;
+                app["offers"] = new Dictionary<string, object?> { ["@type"] = "Offer", ["price"] = "0", ["priceCurrency"] = "USD" };
+            }
             if (!string.IsNullOrWhiteSpace(Options.Publisher))
                 app["publisher"] = new Dictionary<string, object?> { ["@type"] = "Organization", ["name"] = Options.Publisher };
             graph.Add(app);

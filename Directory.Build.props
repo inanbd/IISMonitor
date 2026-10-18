@@ -9,5 +9,6 @@
     <Version>1.0.0</Version>
     <Company>IISMonitor</Company>
     <Product>IIS Monitor</Product>
+    <Copyright>Copyright (c) 2026 inanbd. MIT License.</Copyright>
   </PropertyGroup>
 </Project>

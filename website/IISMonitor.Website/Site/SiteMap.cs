@@ -35,7 +35,7 @@ public static class SiteMap
         "/", "Home",
         "IIS Monitor — Live IIS, App Pool & SQL Server Monitoring",
         "Real-time IIS monitoring, down to every app pool",
-        "See every IIS site and app pool in real time: CPU, memory, disk, network, response times, every request and SQL Server load, with 7 days of history.",
+        "Free, open-source IIS monitoring for every site and app pool: CPU, memory, network, response times, every request and SQL Server load, with 7 days of history.",
         Screenshot: "overview",
         ScreenshotAlt: "IIS Monitor's Overview tab: CPU, RAM, requests per second and network charts with one line per application pool");
 

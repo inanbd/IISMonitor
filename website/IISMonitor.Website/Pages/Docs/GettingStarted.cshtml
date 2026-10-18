@@ -29,6 +29,10 @@
 }
 @if (Site.HasSource)
 {
+    @if (Site.HasLicense)
+    {
+        <p>IIS Monitor is free and open source under the <a href="@(Site.LicenseUrl ?? Site.Options.SourceUrl)" rel="noopener license">@Site.LicenseName</a>: use it on as many servers as you like.</p>
+    }
     <p>The code is on <a href="@Site.Options.SourceUrl" rel="noopener">@Site.SourceHost</a>. Clone it, or download it from the repository page@(Site.SourceIsGitHub ? " (Code › Download ZIP)" : ""):</p>
     <pre><code>git clone @Site.SourceCloneUrl</code></pre>
 }

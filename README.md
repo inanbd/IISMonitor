@@ -112,6 +112,10 @@ they work even where Windows blocks PowerShell scripts ("running scripts is disa
 system") without changing the machine's policy. Equivalent by hand:
 `powershell -ExecutionPolicy Bypass -File .\scripts\publish.ps1`.
 
+## License
+
+IIS Monitor is free and open source under the [MIT License](LICENSE).
+
 ## Website
 
 `website/` holds the product website, an ASP.NET Core Razor Pages site that describes every feature

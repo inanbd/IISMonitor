@@ -7,6 +7,8 @@ public static class Faq
 {
     public static readonly IReadOnlyList<FaqItem> Items =
     [
+        new("free", "Is IIS Monitor free?",
+            "<p>Yes. IIS Monitor is free and open source under the <a href=\"https://github.com/inanbd/IISMonitor/blob/HEAD/LICENSE\">MIT License</a>: you can use it on as many servers as you like, including at work, and change or share the code. The code is <a href=\"https://github.com/inanbd/IISMonitor\">on GitHub</a>.</p>"),
         new("requirements", "Which Windows and IIS versions does IIS Monitor support?",
             "<p>Windows Server 2022 and Windows Server 2025 with IIS 10, on x64. The published build is self-contained, so the server doesn't need a .NET runtime installed.</p>"),
         new("what-it-measures", "What does IIS Monitor measure?",

@@ -118,7 +118,21 @@
             </nav>
         </div>
         <div class="container footer-legal">
-            <p>© @DateTime.UtcNow.Year @(string.IsNullOrWhiteSpace(Site.Options.Publisher) ? SiteContext.Name : Site.Options.Publisher)</p>
+            <p>
+                © @DateTime.UtcNow.Year @(string.IsNullOrWhiteSpace(Site.Options.Publisher) ? SiteContext.Name : Site.Options.Publisher)
+                @if (Site.HasLicense)
+                {
+                    <text>· Free and open source under the </text>
+                    @if (Site.LicenseUrl is { } license)
+                    {
+                        <a href="@license" rel="noopener license">@Site.LicenseName</a>
+                    }
+                    else
+                    {
+                        @Site.LicenseName
+                    }
+                }
+            </p>
             <p>Microsoft, Windows Server, IIS and SQL Server are trademarks of the Microsoft group of companies. IIS Monitor is not affiliated with or endorsed by Microsoft.</p>
         </div>
     </footer>

@@ -15,7 +15,7 @@
         </div>
         @if (Site.HasSource)
         {
-            <p class="hero-source"><a href="@Site.Options.SourceUrl" rel="noopener">@Site.SourceIcon()<span>Get the code on @Site.SourceHost</span></a></p>
+            <p class="hero-source"><a href="@Site.Options.SourceUrl" rel="noopener">@Site.SourceIcon()<span>@(Site.HasLicense ? "Free and open source · " : "")Get the code on @Site.SourceHost</span></a></p>
         }
         <screenshot name="overview" alt="@home.ScreenshotAlt" variant="hero hero-shot" priority="true" />
     </div>
@@ -158,10 +158,14 @@
     <section class="section" aria-labelledby="source-title">
         <div class="container split">
             <div>
-                <p class="eyebrow">@Site.SourceIcon()<span>On @Site.SourceHost</span></p>
-                <h2 id="source-title">Get IIS Monitor on @Site.SourceHost</h2>
-                <p class="lead">All of IIS Monitor is on @Site.SourceHost: the Windows service, the dashboard and the install scripts. Clone it, build a self-contained package for your servers with one script, and follow every change.</p>
+                <p class="eyebrow">@Site.SourceIcon()<span>@(Site.HasLicense ? "Open source" : "On " + Site.SourceHost)</span></p>
+                <h2 id="source-title">@(Site.HasLicense ? "Free and open source on " + Site.SourceHost : "Get IIS Monitor on " + Site.SourceHost)</h2>
+                <p class="lead">@(Site.HasLicense ? $"IIS Monitor is free and open source under the {Site.LicenseName}. " : "")All of it is on @Site.SourceHost: the Windows service, the dashboard and the install scripts. Clone it, build a self-contained package for your servers with one script, and follow every change.</p>
                 <ul class="checks">
+                    @if (Site.HasLicense)
+                    {
+                        <li>@Icons.Svg("check")<span>Use it on as many servers as you like, at work too, and change or share the code: <a href="@(Site.LicenseUrl ?? Site.Options.SourceUrl)" rel="noopener license">@Site.LicenseName</a>.</span></li>
+                    }
                     <li>@Icons.Svg("check")<span>Clone or download the code, then build it with the free .NET 10 SDK.</span></li>
                     <li>@Icons.Svg("check")<span><code>scripts\publish.cmd</code> creates a package that runs on any Windows Server 2022 or 2025, with no .NET to install there.</span></li>
                     @if (Site.IssuesUrl is { } issues)
@@ -184,7 +188,7 @@
                     </span>
                 </span>
                 <span class="repo-card-text">Real-time and historical monitoring for IIS websites, application pools and SQL Server on Windows Server 2022 and 2025.</span>
-                <span class="repo-card-tags"><span>C#</span><span>.NET 10</span><span>Windows service</span><span>WPF</span><span>IIS</span><span>SQL Server</span></span>
+                <span class="repo-card-tags">@if (Site.HasLicense) { <span>@Site.LicenseName</span> }<span>C#</span><span>.NET 10</span><span>Windows service</span><span>WPF</span><span>IIS</span><span>SQL Server</span></span>
                 <span class="repo-card-label">Clone it</span>
                 <code class="repo-card-code">git clone @Site.SourceCloneUrl</code>
                 <span class="repo-card-link">Open @Site.SourceName @Icons.Svg("arrow-right")</span>

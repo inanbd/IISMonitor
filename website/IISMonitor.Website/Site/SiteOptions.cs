@@ -19,4 +19,7 @@ public sealed class SiteOptions
 
     /// <summary>Company or person publishing IIS Monitor, for the footer and structured data. Optional.</summary>
     public string Publisher { get; set; } = "";
+
+    /// <summary>The license IIS Monitor is released under, such as "MIT". Empty: the site doesn't call it free or open source.</summary>
+    public string License { get; set; } = "";
 }

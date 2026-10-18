@@ -23,7 +23,8 @@ Then open <http://localhost:5080>.
 | `BaseUrl` | Public address, such as `https://www.example.com`. Used for canonical links, Open Graph tags, structured data, `sitemap.xml` and `robots.txt`. Set it in production; when empty, the address of each request is used. |
 | `DownloadUrl` | Where the **Download** buttons go. When empty they say **Get started** and open the install guide. |
 | `SourceUrl` | Source repository, set to `https://github.com/inanbd/IISMonitor`. It adds the GitHub logo to the header, a **Get IIS Monitor on GitHub** section with the clone command to the home page, links in the footer and the install guide, and, for a GitHub repository, links to its Issues. Leave empty to hide them all. |
-| `Publisher` | Company or person shown in the footer copyright and in the structured data. Optional. |
+| `Publisher` | Company or person shown in the footer copyright and in the structured data; set to `inanbd`, the copyright holder in `LICENSE`. |
+| `License` | The license IIS Monitor is released under, set to `MIT`. It makes the site say "free and open source", link the repository's `LICENSE` file, and mark the app as free in the structured data. Leave empty if the code isn't open source. |
 
 ## Contact form and email
 
