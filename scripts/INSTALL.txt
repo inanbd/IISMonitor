@@ -1,5 +1,5 @@
 IIS Monitor - real-time monitoring for IIS websites, application pools and SQL Server
-https://github.com/inanbd/IISMonitor
+https://iis-monitor.kaizar.us/
 
 REQUIREMENTS
   - Windows Server 2022 or 2025 with IIS 10, x64.
@@ -25,7 +25,8 @@ UNINSTALL
   and settings (in C:\ProgramData\IISMonitor).
 
 HELP
-  Guides, troubleshooting and the source code: https://github.com/inanbd/IISMonitor
+  Guides and troubleshooting: https://iis-monitor.kaizar.us/
+  Source code: https://github.com/inanbd/IISMonitor
   Report a problem: https://github.com/inanbd/IISMonitor/issues
 
 LICENSE

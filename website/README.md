@@ -20,7 +20,7 @@ Then open <http://localhost:5080>.
 
 | Setting | Purpose |
 |---|---|
-| `BaseUrl` | Public address, such as `https://www.example.com`. Used for canonical links, Open Graph tags, structured data, `sitemap.xml` and `robots.txt`. Set it in production; when empty, the address of each request is used. |
+| `BaseUrl` | Public address, set to `https://iis-monitor.kaizar.us`. Used for canonical links, Open Graph tags, structured data, `sitemap.xml` and `robots.txt`. Set it in production; when empty, the address of each request is used. |
 | `DownloadUrl` | Where the **Download** buttons go: the latest release's zip, `https://github.com/inanbd/IISMonitor/releases/latest/download/IISMonitor-win-x64.zip`, which always points at the newest release. When empty, the buttons say **Get started** and open the install guide. |
 | `SourceUrl` | Source repository, set to `https://github.com/inanbd/IISMonitor`. It adds the GitHub logo to the header, a **Get IIS Monitor on GitHub** section with the clone command to the home page, links in the footer and the install guide, and, for a GitHub repository, links to its Issues. Leave empty to hide them all. |
 | `Publisher` | Company or person shown in the footer copyright and in the structured data; set to `inanbd`, the copyright holder in `LICENSE`. |

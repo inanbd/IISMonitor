@@ -24,6 +24,7 @@ Real-time and historical monitoring for every IIS website and application pool o
 ## Notes
 
 - The executables aren't code-signed, so Windows SmartScreen may warn the first time. Unblocking the zip before extracting avoids most warnings.
+- Guides for every feature, install and troubleshooting: [iis-monitor.kaizar.us](https://iis-monitor.kaizar.us/).
 - Found a problem or have an idea? [Open an issue](https://github.com/inanbd/IISMonitor/issues).
 - IIS Monitor is free and open source under the [MIT License](https://github.com/inanbd/IISMonitor/blob/HEAD/LICENSE).
 
