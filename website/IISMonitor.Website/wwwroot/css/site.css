@@ -368,7 +368,7 @@ code, kbd, pre { font-family: var(--mono); font-size: 0.875em; }
 .split.reverse { grid-template-columns: minmax(0, 1.25fr) minmax(0, 0.9fr); }
 .split.reverse > :first-child { order: 2; }
 @media (max-width: 900px) {
-    .split, .split.reverse { grid-template-columns: 1fr; }
+    .split, .split.reverse { grid-template-columns: minmax(0, 1fr); }
     .split.reverse > :first-child { order: 0; }
 }
 
@@ -443,7 +443,7 @@ code, kbd, pre { font-family: var(--mono); font-size: 0.875em; }
     overflow: hidden;
     cursor: zoom-in;
 }
-.shot-link img { width: 100%; }
+.shot:not(.shot-dialog) .shot-link img { width: 100%; }
 .shot-hint {
     position: absolute;
     right: 12px;
@@ -463,9 +463,9 @@ code, kbd, pre { font-family: var(--mono); font-size: 0.875em; }
 .shot-link:hover .shot-hint, .shot-link:focus-visible .shot-hint { opacity: 1; transform: none; }
 .shot figcaption { margin-top: 12px; color: var(--muted); font-size: 0.92rem; text-align: center; text-wrap: balance; }
 .shot-hero { margin: clamp(32px, 5vw, 48px) 0 0; }
-/* Dialog windows are shown at their own size, never stretched. */
+/* Dialog windows are shown at their own size, never stretched: the width attribute sizes the image,
+   which also reserves its space before a lazy image has loaded. */
 .shot-dialog { width: fit-content; max-width: 100%; margin-inline: auto; }
-.shot-dialog .shot-link img { width: auto; }
 .shot-missing { padding: 48px 24px; border: 1px dashed var(--line-strong); border-radius: var(--radius); color: var(--muted); text-align: center; }
 
 .zoom-dialog {
@@ -868,3 +868,104 @@ button.button { cursor: pointer; font-family: inherit; }
 .contact-aside .mini h2 { font-family: var(--font-display); font-size: 1.05rem; }
 .contact-aside .mini p { margin-top: 6px; }
 .contact-aside .checks { margin-top: 10px; gap: 6px; font-size: 0.95rem; }
+
+/* ---------- Source code (GitHub) ---------- */
+
+.header-source {
+    display: grid;
+    place-items: center;
+    width: 38px;
+    height: 38px;
+    margin-right: -14px;
+    border-radius: 50%;
+    color: var(--ink-2);
+    transition: background-color 0.15s ease, color 0.15s ease;
+}
+.header-source:hover { background: var(--bg-soft); color: var(--ink); }
+.header-source .icon { width: 22px; height: 22px; }
+@media (max-width: 760px) {
+    .header-source { margin-left: auto; margin-right: 0; }
+    .header-source + .header-cta { margin-left: 4px; }
+}
+
+.hero-source { margin-top: 18px; font-size: 0.95rem; }
+.hero-source a { display: inline-flex; align-items: center; gap: 8px; color: var(--muted); text-decoration: none; }
+.hero-source a:hover { color: var(--ink); }
+.hero-source .icon { width: 18px; height: 18px; }
+
+.footer-source {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 16px;
+    padding: 7px 14px;
+    border: 1px solid var(--line-strong);
+    border-radius: 999px;
+    background: var(--bg);
+    color: var(--ink);
+    font-size: 0.9rem;
+    font-weight: 600;
+    text-decoration: none;
+}
+.footer-source:hover { border-color: var(--muted); }
+.footer-source .icon { width: 18px; height: 18px; }
+
+.button .icon:first-child { width: 1.2em; height: 1.2em; }
+
+.repo-card {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    padding: clamp(22px, 3vw, 32px);
+    border: 1px solid var(--line);
+    border-radius: calc(var(--radius) * 1.25);
+    background: var(--bg-soft);
+    box-shadow: var(--shadow);
+    color: var(--ink-2);
+    text-decoration: none;
+    transition: transform 0.15s ease, border-color 0.15s ease;
+}
+.repo-card:hover { transform: translateY(-2px); border-color: var(--line-strong); }
+.repo-card-head { display: flex; align-items: center; gap: 14px; }
+.repo-card-head strong { display: block; color: var(--ink); font-family: var(--font-display); font-size: 1.2rem; letter-spacing: -0.01em; }
+.repo-card-head > span > span { color: var(--muted); font-size: 0.9rem; }
+.repo-card-logo {
+    display: grid;
+    place-items: center;
+    flex: none;
+    width: 52px;
+    height: 52px;
+    border-radius: 14px;
+    background: #0f1a2a;
+    color: #fff;
+}
+.repo-card-logo .icon { width: 30px; height: 30px; }
+.repo-card-text { font-size: 1rem; }
+.repo-card-tags { display: flex; flex-wrap: wrap; gap: 6px; }
+.repo-card-tags span {
+    padding: 3px 10px;
+    border-radius: 999px;
+    background: var(--brand-soft);
+    color: var(--brand);
+    font-size: 0.8rem;
+    font-weight: 600;
+}
+.repo-card-label { margin-top: 4px; color: var(--muted); font-size: 0.78rem; font-weight: 650; letter-spacing: 0.06em; text-transform: uppercase; }
+.repo-card-code {
+    display: block;
+    margin-top: -6px;
+    padding: 12px 14px;
+    border: 1px solid var(--line);
+    border-radius: var(--radius-small);
+    background: var(--bg);
+    color: var(--ink);
+    font-size: 0.88rem;
+    overflow-x: auto;
+    white-space: nowrap;
+}
+.repo-card-link { display: inline-flex; align-items: center; gap: 6px; color: var(--link); font-weight: 600; }
+.repo-card-link .icon { width: 1em; height: 1em; transition: transform 0.15s ease; }
+.repo-card:hover .repo-card-link .icon { transform: translateX(3px); }
+@media (prefers-color-scheme: dark) {
+    .repo-card-logo { background: #e7edf5; color: #0b1220; }
+}

@@ -22,7 +22,7 @@ Then open <http://localhost:5080>.
 |---|---|
 | `BaseUrl` | Public address, such as `https://www.example.com`. Used for canonical links, Open Graph tags, structured data, `sitemap.xml` and `robots.txt`. Set it in production; when empty, the address of each request is used. |
 | `DownloadUrl` | Where the **Download** buttons go. When empty they say **Get started** and open the install guide. |
-| `SourceUrl` | Source repository. When set, a **Source** link appears in the header and footer. |
+| `SourceUrl` | Source repository, set to `https://github.com/inanbd/IISMonitor`. It adds the GitHub logo to the header, a **Get IIS Monitor on GitHub** section with the clone command to the home page, links in the footer and the install guide, and, for a GitHub repository, links to its Issues. Leave empty to hide them all. |
 | `Publisher` | Company or person shown in the footer copyright and in the structured data. Optional. |
 
 ## Contact form and email
@@ -144,6 +144,9 @@ dotnet publish website/IISMonitor.Website -c Release -o out
 
 Host the `out` folder like any ASP.NET Core app: on IIS with the
 [ASP.NET Core Hosting Bundle](https://learn.microsoft.com/aspnet/core/host-and-deploy/iis/),
-Azure App Service, or behind a reverse proxy on Linux. Deploy the publish output rather than the build
-output: the pre-compressed static files are created at publish time. Set `Site__BaseUrl` to the public
-address.
+Azure App Service, or behind a reverse proxy on Linux. Set `Site__BaseUrl` to the public address and the
+`Email__*` settings described above.
+
+Deploy the publish output: it holds properly compressed copies of the CSS and JavaScript. Running the
+build output (`bin/Release/...`) also works in any environment, because the site loads the build's
+static-asset manifest, but its compressed copies are barely compressed.

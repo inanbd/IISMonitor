@@ -13,6 +13,10 @@
             <a class="button" href="@Site.DownloadUrl">@(Site.HasDownload ? "Download IIS Monitor" : "Get started") @Icons.Svg("arrow-right")</a>
             <a class="button button-quiet" href="/features">Explore the features</a>
         </div>
+        @if (Site.HasSource)
+        {
+            <p class="hero-source"><a href="@Site.Options.SourceUrl" rel="noopener">@Site.SourceIcon()<span>Get the code on @Site.SourceHost</span></a></p>
+        }
         <screenshot name="overview" alt="@home.ScreenshotAlt" variant="hero hero-shot" priority="true" />
     </div>
 </section>
@@ -148,6 +152,46 @@
         <p class="actions"><a class="button button-quiet" href="/docs/how-it-works">How IIS Monitor works @Icons.Svg("arrow-right")</a></p>
     </div>
 </section>
+
+@if (Site.HasSource)
+{
+    <section class="section" aria-labelledby="source-title">
+        <div class="container split">
+            <div>
+                <p class="eyebrow">@Site.SourceIcon()<span>On @Site.SourceHost</span></p>
+                <h2 id="source-title">Get IIS Monitor on @Site.SourceHost</h2>
+                <p class="lead">All of IIS Monitor is on @Site.SourceHost: the Windows service, the dashboard and the install scripts. Clone it, build a self-contained package for your servers with one script, and follow every change.</p>
+                <ul class="checks">
+                    <li>@Icons.Svg("check")<span>Clone or download the code, then build it with the free .NET 10 SDK.</span></li>
+                    <li>@Icons.Svg("check")<span><code>scripts\publish.cmd</code> creates a package that runs on any Windows Server 2022 or 2025, with no .NET to install there.</span></li>
+                    @if (Site.IssuesUrl is { } issues)
+                    {
+                        <li>@Icons.Svg("check")<span>Report a problem or suggest a feature in <a href="@issues" rel="noopener">GitHub Issues</a>.</span></li>
+                    }
+                    <li>@Icons.Svg("check")<span>Star or watch the repository to follow new changes.</span></li>
+                </ul>
+                <div class="actions">
+                    <a class="button" href="@Site.Options.SourceUrl" rel="noopener">@Site.SourceIcon()View on @Site.SourceHost</a>
+                    <a class="button button-quiet" href="/docs/getting-started">Read the install guide</a>
+                </div>
+            </div>
+            <a class="repo-card" href="@Site.Options.SourceUrl" rel="noopener" aria-label="@Site.SourceName on @Site.SourceHost">
+                <span class="repo-card-head">
+                    <span class="repo-card-logo">@Site.SourceIcon()</span>
+                    <span>
+                        <strong>@Site.SourceName</strong>
+                        <span>Repository on @Site.SourceHost</span>
+                    </span>
+                </span>
+                <span class="repo-card-text">Real-time and historical monitoring for IIS websites, application pools and SQL Server on Windows Server 2022 and 2025.</span>
+                <span class="repo-card-tags"><span>C#</span><span>.NET 10</span><span>Windows service</span><span>WPF</span><span>IIS</span><span>SQL Server</span></span>
+                <span class="repo-card-label">Clone it</span>
+                <code class="repo-card-code">git clone @Site.SourceCloneUrl</code>
+                <span class="repo-card-link">Open @Site.SourceName @Icons.Svg("arrow-right")</span>
+            </a>
+        </div>
+    </section>
+}
 
 <section class="section">
     <div class="container">

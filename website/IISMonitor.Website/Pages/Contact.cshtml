@@ -133,6 +133,13 @@
                 <li>@Icons.Svg("check")<span>Any IISMonitor errors in the Application event log</span></li>
             </ul>
         </div>
+        @if (Site.IssuesUrl is { } issues)
+        {
+            <div class="mini">
+                <h2>Found a bug?</h2>
+                <p>You can also <a href="@issues" rel="noopener">open an issue on GitHub</a>, where anyone can follow it and add details.</p>
+            </div>
+        }
         <div class="mini">
             <h2>Ideas welcome</h2>
             <p>A metric you miss, a chart that would help, a rule the auto blacklist should offer: tell me about it.</p>

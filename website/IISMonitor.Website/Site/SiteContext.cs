@@ -33,6 +33,24 @@ public sealed class SiteContext(IOptions<SiteOptions> options, IHttpContextAcces
 
     public bool HasSource => !string.IsNullOrWhiteSpace(Options.SourceUrl);
 
+    public bool SourceIsGitHub =>
+        Uri.TryCreate(Options.SourceUrl, UriKind.Absolute, out var uri) && uri.Host.Equals("github.com", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>"GitHub" for a GitHub repository, otherwise "source code".</summary>
+    public string SourceHost => SourceIsGitHub ? "GitHub" : "source code";
+
+    /// <summary>The repository as people write it, such as "inanbd/IISMonitor".</summary>
+    public string SourceName =>
+        Uri.TryCreate(Options.SourceUrl, UriKind.Absolute, out var uri) ? uri.AbsolutePath.Trim('/') : Options.SourceUrl;
+
+    public string SourceCloneUrl => Options.SourceUrl.TrimEnd('/') + ".git";
+
+    /// <summary>Where to report problems: the repository's GitHub Issues, when the source is on GitHub.</summary>
+    public string? IssuesUrl => SourceIsGitHub ? Options.SourceUrl.TrimEnd('/') + "/issues" : null;
+
+    /// <summary>The GitHub mark for a GitHub repository, a code icon otherwise.</summary>
+    public IHtmlContent SourceIcon(string cssClass = "icon") => SourceIsGitHub ? Icons.GitHub(cssClass) : Icons.Svg("code", cssClass);
+
     /// <summary>Social preview image: the page's own screenshot, else the default card.</summary>
     public (string Url, int? Width, int? Height) SocialImage(SitePage? page)
     {
@@ -76,6 +94,8 @@ public sealed class SiteContext(IOptions<SiteOptions> options, IHttpContextAcces
             };
             if (HasDownload)
                 app["downloadUrl"] = Options.DownloadUrl;
+            if (HasSource)
+                app["sameAs"] = new[] { Options.SourceUrl };
             if (!string.IsNullOrWhiteSpace(Options.Publisher))
                 app["publisher"] = new Dictionary<string, object?> { ["@type"] = "Organization", ["name"] = Options.Publisher };
             graph.Add(app);

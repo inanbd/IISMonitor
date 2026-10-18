@@ -27,6 +27,11 @@
     <p><a href="@Site.DownloadUrl">Download IIS Monitor</a> and extract it. You get a <code>publish</code> folder with <code>Service</code>, <code>Dashboard</code> and the install scripts.</p>
     <h3 id="build">Or build it from source</h3>
 }
+@if (Site.HasSource)
+{
+    <p>The code is on <a href="@Site.Options.SourceUrl" rel="noopener">@Site.SourceHost</a>. Clone it, or download it from the repository page@(Site.SourceIsGitHub ? " (Code › Download ZIP)" : ""):</p>
+    <pre><code>git clone @Site.SourceCloneUrl</code></pre>
+}
 <p>Build IIS Monitor on any machine with the <a href="https://dotnet.microsoft.com/download/dotnet/10.0" rel="noopener">.NET 10 SDK</a>. In the repository folder:</p>
 <pre><code>dotnet build
 dotnet test

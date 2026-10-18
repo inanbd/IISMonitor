@@ -66,11 +66,11 @@
                 <a href="/docs/getting-started" aria-current="@Current("/docs/getting-started")">Install</a>
                 <a href="/faq" aria-current="@Current("/faq")">FAQ</a>
                 <a href="/contact" aria-current="@Current("/contact")">Contact</a>
-                @if (Site.HasSource)
-                {
-                    <a href="@Site.Options.SourceUrl" rel="noopener">Source</a>
-                }
             </nav>
+            @if (Site.HasSource)
+            {
+                <a class="header-source" href="@Site.Options.SourceUrl" rel="noopener" title="IIS Monitor on @Site.SourceHost">@Site.SourceIcon()<span class="visually-hidden">IIS Monitor on @Site.SourceHost</span></a>
+            }
             <a class="button button-small header-cta" href="@Site.DownloadUrl">@(Site.HasDownload ? "Download" : "Get started")</a>
         </div>
     </header>
@@ -84,6 +84,10 @@
             <div class="footer-brand">
                 <a class="brand" href="/">@Icons.Logo()<span>IIS Monitor</span></a>
                 <p>Real-time and historical monitoring for IIS websites, application pools and the SQL Server behind them, on Windows Server 2022 and 2025.</p>
+                @if (Site.HasSource)
+                {
+                    <a class="footer-source" href="@Site.Options.SourceUrl" rel="noopener">@Site.SourceIcon()<span>@Site.SourceName on @Site.SourceHost</span></a>
+                }
             </div>
             <nav aria-label="Features">
                 <h2>Features</h2>
@@ -104,7 +108,11 @@
                     <li><a href="/contact">Contact</a></li>
                     @if (Site.HasSource)
                     {
-                        <li><a href="@Site.Options.SourceUrl" rel="noopener">Source code</a></li>
+                        <li><a href="@Site.Options.SourceUrl" rel="noopener">@(Site.SourceIsGitHub ? "GitHub repository" : "Source code")</a></li>
+                        if (Site.IssuesUrl is { } issues)
+                        {
+                            <li><a href="@issues" rel="noopener">Report an issue</a></li>
+                        }
                     }
                 </ul>
             </nav>

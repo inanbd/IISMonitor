@@ -4,6 +4,11 @@ using Microsoft.Extensions.Options;
 
 var builder = WebApplication.CreateBuilder(args);
 
+// Serve static files (and their compressed copies) from the build output in every environment, not
+// only Development. Without it, running a Release build outside Development sends browsers an empty
+// stylesheet. Published output has no manifest to load, so this changes nothing there.
+builder.WebHost.UseStaticWebAssets();
+
 builder.Services.Configure<SiteOptions>(builder.Configuration.GetSection(SiteOptions.SectionName));
 builder.Services.Configure<RouteOptions>(options => options.LowercaseUrls = true);
 builder.Services.AddRazorPages();

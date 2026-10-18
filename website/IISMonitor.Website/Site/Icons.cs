@@ -36,6 +36,10 @@ public static class Icons
             ? new HtmlString($"""<svg class="{cssClass}" viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">{shape}</svg>""")
             : HtmlString.Empty;
 
+    /// <summary>GitHub's mark, used only to link to the project on GitHub.</summary>
+    public static IHtmlContent GitHub(string cssClass = "icon") =>
+        new HtmlString($"""<svg class="{cssClass}" viewBox="0 0 16 16" width="16" height="16" fill="currentColor" aria-hidden="true" focusable="false"><path d="M8 0c4.42 0 8 3.58 8 8a8.013 8.013 0 0 1-5.45 7.59c-.4.08-.55-.17-.55-.38 0-.27.01-1.13.01-2.2 0-.75-.25-1.23-.54-1.48 1.78-.2 3.65-.88 3.65-3.95 0-.88-.31-1.59-.82-2.15.08-.2.36-1.02-.08-2.12 0 0-.67-.22-2.2.82-.64-.18-1.32-.27-2-.27-.68 0-1.36.09-2 .27-1.53-1.03-2.2-.82-2.2-.82-.44 1.1-.16 1.92-.08 2.12-.51.56-.82 1.28-.82 2.15 0 3.06 1.86 3.75 3.64 3.95-.23.2-.44.55-.51 1.07-.46.21-1.61.55-2.33-.66-.15-.24-.6-.83-1.23-.82-.67.01-.27.38.01.53.34.19.73.9.82 1.13.16.45.68 1.31 2.69.94 0 .67.01 1.3.01 1.49 0 .21-.15.45-.55.38A7.995 7.995 0 0 1 0 8c0-4.42 3.58-8 8-8Z"/></svg>""");
+
     /// <summary>The IIS Monitor mark: a chart line on the dashboard's navy.</summary>
     public static IHtmlContent Logo(string cssClass = "logo-mark") =>
         new HtmlString($"""<svg class="{cssClass}" viewBox="0 0 32 32" width="32" height="32" aria-hidden="true" focusable="false"><rect width="32" height="32" rx="8" fill="#1f4e79"/><path d="M7 21.5l5.5-6 4 3.5 8-9.5" fill="none" stroke="#fff" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><circle cx="24.5" cy="9.5" r="2.2" fill="#7cc4ff"/></svg>""");
