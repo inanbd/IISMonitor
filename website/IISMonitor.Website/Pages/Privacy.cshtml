@@ -1,0 +1,66 @@
+@page "/privacy"
+@{
+    var current = SiteMap.Privacy;
+    var usesAnalytics = !string.IsNullOrWhiteSpace(Site.Options.GoogleAnalyticsId);
+    var owner = string.IsNullOrWhiteSpace(Site.Options.Publisher) ? "the publisher of IIS Monitor" : Site.Options.Publisher;
+}
+
+<div class="container">
+    <nav class="crumbs" aria-label="Breadcrumb">
+        <ol>
+            <li><a href="/">Home</a></li>
+            <li><span aria-current="page">@current.NavTitle</span></li>
+        </ol>
+    </nav>
+    <header class="page-head">
+        <p class="eyebrow">@Icons.Svg(current.Icon)<span>@current.NavTitle</span></p>
+        <h1>@current.Heading</h1>
+        <p class="lead">@current.Description</p>
+    </header>
+</div>
+
+<div class="container article-single">
+    <article class="prose">
+        <p>This page covers this website, @Site.BaseUrl.Replace("https://", ""), which is run by @owner. It doesn't cover the IIS Monitor software itself, which sends no data anywhere: see <a href="/docs/security">Data &amp; security</a>.</p>
+
+        @if (usesAnalytics)
+        {
+            <h2 id="analytics">Google Analytics</h2>
+            <p>This website uses Google Analytics to understand how it is used: which pages are read, for how long, and how visitors found it. Google Analytics collects:</p>
+            <ul>
+                <li>the pages you visit and how you got here (for example a search engine or a link);</li>
+                <li>your browser, operating system, device type, screen size and language;</li>
+                <li>your approximate location (country or city), worked out from your IP address. Google Analytics doesn't store IP addresses.</li>
+            </ul>
+            <p>To tell visits apart, Google Analytics sets two cookies on this website, <code>_ga</code> and <code>_ga_&lt;ID&gt;</code>, which expire after two years. The reports show totals, not individual people, and this website doesn't send Google your name, email address or anything you type.</p>
+            <p>Google processes this data under its own <a href="https://policies.google.com/privacy" rel="noopener">privacy policy</a>; see also <a href="https://policies.google.com/technologies/partner-sites" rel="noopener">how Google uses information from sites that use its services</a>.</p>
+
+            <h3 id="opt-out">Opting out</h3>
+            <ul>
+                <li>Block or delete cookies for this website in your browser settings, or browse in a private window.</li>
+                <li>Install Google's <a href="https://tools.google.com/dlpage/gaoptout" rel="noopener">Google Analytics opt-out browser add-on</a>, which stops Google Analytics on every website.</li>
+                <li>Many content and tracker blockers stop Google Analytics too. The website works the same either way.</li>
+            </ul>
+        }
+        else
+        {
+            <h2 id="analytics">No analytics</h2>
+            <p>This website doesn't use analytics or tracking cookies.</p>
+        }
+
+        <h2 id="contact-form">Messages sent through the contact form</h2>
+        <ul>
+            <li>Your name, email address, company, topic and message are emailed to me so I can reply. That is all they are used for.</li>
+            <li>The website doesn't keep them: there is no database of messages, and its logs record only the topic you chose.</li>
+            <li>The form uses your IP address, in memory only, to limit how many messages one visitor can send in an hour, and doesn't store it.</li>
+            <li>The form uses two short-lived cookies that are needed for it to work: one protects it against forged submissions, and one shows the "message sent" confirmation once.</li>
+        </ul>
+
+        <h2 id="server-logs">Web server logs</h2>
+        <p>Like most websites, the server that hosts this site may keep standard access logs (IP address, page requested, browser and time) for security and troubleshooting.</p>
+
+        <h2 id="questions">Questions</h2>
+        <p>For any question about your data, or to ask me to delete a message you sent, use the <a href="/contact">contact form</a>.</p>
+        <p class="updated">Last updated 18 October 2026.</p>
+    </article>
+</div>

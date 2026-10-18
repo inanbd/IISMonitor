@@ -5,7 +5,7 @@ using Microsoft.Extensions.Options;
 namespace IISMonitor.Website.Site;
 
 /// <summary>Per-request helpers for links and SEO metadata, injected into views as <c>Site</c>.</summary>
-public sealed class SiteContext(IOptions<SiteOptions> options, IHttpContextAccessor accessor, Screenshots screenshots)
+public sealed class SiteContext(IOptions<SiteOptions> options, IHttpContextAccessor accessor, Screenshots screenshots, IHostEnvironment environment)
 {
     public const string Name = "IIS Monitor";
     public const string DefaultSocialImage = "/images/og-image.png";
@@ -28,6 +28,9 @@ public sealed class SiteContext(IOptions<SiteOptions> options, IHttpContextAcces
     public string Absolute(string path) => BaseUrl + (path.StartsWith('/') ? path : "/" + path);
 
     public bool HasDownload => !string.IsNullOrWhiteSpace(Options.DownloadUrl);
+
+    /// <summary>The Google Analytics measurement ID to tag this page with, if any.</summary>
+    public string? AnalyticsId => Options.AnalyticsIdFor(environment);
 
     public string DownloadUrl => HasDownload ? Options.DownloadUrl : "/docs/getting-started";
 
@@ -132,6 +135,17 @@ public sealed class SiteContext(IOptions<SiteOptions> options, IHttpContextAcces
                     ["name"] = q.Question,
                     ["acceptedAnswer"] = new Dictionary<string, object?> { ["@type"] = "Answer", ["text"] = q.AnswerHtml },
                 }).ToList(),
+            });
+        }
+        else if (page == SiteMap.Privacy)
+        {
+            graph.Add(new Dictionary<string, object?>
+            {
+                ["@type"] = "WebPage",
+                ["name"] = page.Heading,
+                ["description"] = page.Description,
+                ["url"] = Absolute(page.Path),
+                ["isPartOf"] = new Dictionary<string, object?> { ["@id"] = Absolute("/#website") },
             });
         }
         else if (page == SiteMap.Contact)

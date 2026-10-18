@@ -45,6 +45,17 @@ app.UseStatusCodePagesWithReExecute("/not-found");
 // Pages only: MapStaticAssets already serves static files compressed at publish time.
 app.UseWhen(context => !Path.HasExtension(context.Request.Path.Value), branch => branch.UseResponseCompression());
 
+// Google Analytics needs its own hosts, as Google documents for GA4 (google.com and doubleclick.net
+// receive the Google signals hit); everything else stays same-origin.
+var analytics = app.Services.GetRequiredService<IOptions<SiteOptions>>().Value.AnalyticsIdFor(app.Environment) is not null;
+const string GoogleHosts = "https://*.google-analytics.com https://*.analytics.google.com https://*.googletagmanager.com https://*.g.doubleclick.net https://*.google.com";
+var contentSecurityPolicy = analytics
+    ? $"default-src 'self'; img-src 'self' data: {GoogleHosts}; style-src 'self'; " +
+      "script-src 'self' https://*.googletagmanager.com; " +
+      $"connect-src 'self' {GoogleHosts}; " +
+      "object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'"
+    : "default-src 'self'; img-src 'self' data:; style-src 'self'; script-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'";
+
 // One address per page: /Features/Overview/ redirects permanently to /features/overview.
 app.Use(async (context, next) =>
 {
@@ -60,8 +71,7 @@ app.Use(async (context, next) =>
     var headers = context.Response.Headers;
     headers.XContentTypeOptions = "nosniff";
     headers["Referrer-Policy"] = "strict-origin-when-cross-origin";
-    headers.ContentSecurityPolicy =
-        "default-src 'self'; img-src 'self' data:; style-src 'self'; script-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'";
+    headers.ContentSecurityPolicy = contentSecurityPolicy;
     await next();
 });
 

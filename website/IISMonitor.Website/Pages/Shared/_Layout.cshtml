@@ -16,6 +16,11 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
+    @if (Site.AnalyticsId is { } analyticsId)
+    {
+        <script async src="https://www.googletagmanager.com/gtag/js?id=@analyticsId"></script>
+        <script src="~/js/analytics.js" asp-append-version="true" data-measurement-id="@analyticsId"></script>
+    }
     <title>@title</title>
     <meta name="description" content="@description">
     @if (canonical is not null)
@@ -132,6 +137,7 @@
                         @Site.LicenseName
                     }
                 }
+                · <a href="/privacy">Privacy</a>
             </p>
             <p>Microsoft, Windows Server, IIS and SQL Server are trademarks of the Microsoft group of companies. IIS Monitor is not affiliated with or endorsed by Microsoft.</p>
         </div>

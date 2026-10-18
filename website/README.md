@@ -25,6 +25,7 @@ Then open <http://localhost:5080>.
 | `SourceUrl` | Source repository, set to `https://github.com/inanbd/IISMonitor`. It adds the GitHub logo to the header, a **Get IIS Monitor on GitHub** section with the clone command to the home page, links in the footer and the install guide, and, for a GitHub repository, links to its Issues. Leave empty to hide them all. |
 | `Publisher` | Company or person shown in the footer copyright and in the structured data; set to `inanbd`, the copyright holder in `LICENSE`. |
 | `License` | The license IIS Monitor is released under, set to `MIT`. It makes the site say "free and open source", link the repository's `LICENSE` file, and mark the app as free in the structured data. Leave empty if the code isn't open source. |
+| `GoogleAnalyticsId` | Google Analytics 4 measurement ID, set to `G-1LTCFN2J2Z`. Every page then loads the Google tag, and the Content-Security-Policy allows Google's hosts. Development never loads it, so local testing doesn't count as visits. The **Privacy** page (`/privacy`) describes what Google Analytics collects; leave the setting empty to remove the tag, and the page then says the site uses no analytics. |
 
 ## Contact form and email
 
@@ -117,6 +118,8 @@ Tips:
 | Home page | `Pages/Index.cshtml` |
 | FAQ (page and FAQ structured data) | `Site/Faq.cs` |
 | Contact page and its email | `Pages/Contact.cshtml(.cs)`, `Site/ContactMailer.cs`, `Site/EmailOptions.cs` |
+| Privacy page | `Pages/Privacy.cshtml` |
+| Google Analytics tag | `Pages/Shared/_Layout.cshtml`, `wwwroot/js/analytics.js`, and the Content-Security-Policy in `Program.cs` |
 | Header, footer, `<head>` tags | `Pages/Shared/_Layout.cshtml` |
 | Breadcrumb, side menu, previous/next | `Pages/Shared/_ArticleLayout.cshtml` |
 | Styles (light and dark) | `wwwroot/css/site.css` |

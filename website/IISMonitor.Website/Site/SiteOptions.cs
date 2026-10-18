@@ -1,3 +1,5 @@
+using System.Text.RegularExpressions;
+
 namespace IISMonitor.Website.Site;
 
 /// <summary>The "Site" section of appsettings.json.</summary>
@@ -22,4 +24,14 @@ public sealed class SiteOptions
 
     /// <summary>The license IIS Monitor is released under, such as "MIT". Empty: the site doesn't call it free or open source.</summary>
     public string License { get; set; } = "";
+
+    /// <summary>Google Analytics 4 measurement ID, such as G-ABC123. Empty: no analytics.</summary>
+    public string GoogleAnalyticsId { get; set; } = "";
+
+    /// <summary>
+    /// The measurement ID to tag pages with: none in Development, so local testing never reaches
+    /// the reports, and none unless it looks like a GA4 ID, since it is written into every page.
+    /// </summary>
+    public string? AnalyticsIdFor(IHostEnvironment environment) =>
+        !environment.IsDevelopment() && Regex.IsMatch(GoogleAnalyticsId, "^G-[A-Z0-9]{4,20}$") ? GoogleAnalyticsId : null;
 }

@@ -173,7 +173,14 @@ public static class SiteMap
         "Questions about IIS Monitor, a feature request or a problem on your server? Send me a message and I'll reply by email.",
         Icon: "mail");
 
-    public static readonly IReadOnlyList<SitePage> All = [Home, FeatureIndex, .. FeaturePages, .. GuidePages, Contact];
+    public static readonly SitePage Privacy = new(
+        "/privacy", "Privacy",
+        "Privacy",
+        "Privacy on this website",
+        "How this website uses Google Analytics and cookies, what happens to messages sent through the contact form, and how to opt out.",
+        Icon: "lock");
+
+    public static readonly IReadOnlyList<SitePage> All = [Home, FeatureIndex, .. FeaturePages, .. GuidePages, Contact, Privacy];
 
     private static readonly Dictionary<string, SitePage> ByPath = All.ToDictionary(p => p.Path, StringComparer.OrdinalIgnoreCase);
 

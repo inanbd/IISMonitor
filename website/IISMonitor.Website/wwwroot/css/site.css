@@ -969,3 +969,8 @@ button.button { cursor: pointer; font-family: inherit; }
 @media (prefers-color-scheme: dark) {
     .repo-card-logo { background: #e7edf5; color: #0b1220; }
 }
+
+/* Single-column text pages (Privacy). */
+.article-single { padding-top: clamp(32px, 4vw, 48px); padding-bottom: clamp(64px, 8vw, 104px); }
+.article-single .prose { max-width: 720px; }
+.prose .updated { margin-top: 2.4em; color: var(--muted); font-size: 0.9rem; }
