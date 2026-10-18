@@ -24,7 +24,12 @@
 <h2 id="get">Get the files</h2>
 @if (Site.HasDownload)
 {
-    <p><a href="@Site.DownloadUrl">Download IIS Monitor</a> and extract it. You get a <code>publish</code> folder with <code>Service</code>, <code>Dashboard</code> and the install scripts.</p>
+    <p><a class="button" href="@Site.DownloadUrl">@Icons.Svg("download")Download IIS Monitor</a></p>
+    <p>The download, <code>IISMonitor-win-x64.zip</code>, is ready to install: the .NET runtime is included.@if (Site.ReleasesUrl is { } releases) { <text> See what's new in the </text><a href="@releases" rel="noopener">release notes</a><text>.</text> }</p>
+    <ol class="steps">
+        <li>Before extracting it, right-click the zip, choose <strong>Properties</strong>, tick <strong>Unblock</strong> and click <strong>OK</strong>, so Windows doesn't warn about every file.</li>
+        <li>Extract it. You get a folder with <code>Service</code>, <code>Dashboard</code>, the install scripts, <code>INSTALL.txt</code> and <code>LICENSE</code>.</li>
+    </ol>
     <h3 id="build">Or build it from source</h3>
 }
 @if (Site.HasSource)
@@ -48,7 +53,7 @@ scripts\publish.cmd</code></pre>
 
 <h2 id="install">Install on an IIS server</h2>
 <ol class="steps">
-    <li>Copy the <code>publish</code> folder to the server.</li>
+    <li>Copy the folder to the server: the extracted download, or the <code>publish</code> folder you built.</li>
     <li>Right-click <code>install-service.cmd</code> and choose <strong>Run as administrator</strong>, or run it from an elevated command prompt. It copies IIS Monitor to <code>C:\Program Files\IISMonitor</code>, registers and starts the <code>IISMonitor</code> Windows service (automatic start, restarts on failure) and adds an <strong>IIS Monitor</strong> shortcut to the Start menu.</li>
     <li>Open <strong>IIS Monitor</strong> from the Start menu. It asks for administrator rights.</li>
 </ol>
@@ -63,7 +68,7 @@ scripts\publish.cmd</code></pre>
 <p>Then glance at the <a href="/features/collectors">Collectors</a> tab: every source should have a green check mark.</p>
 
 <h2 id="update">Update</h2>
-<p>Publish the new version and run <code>install-service.cmd</code> again. It stops the service, replaces the files and starts it again; settings and history are kept.</p>
+<p>Download (or publish) the new version and run <code>install-service.cmd</code> from its folder. It stops the service, replaces the files and starts it again; settings and history are kept.</p>
 <p>If the dashboard is newer than the service, the Requests and Database tabs say so, because an older service can't provide their data. Running <code>install-service.cmd</code> from the new version fixes it.</p>
 
 <h2 id="uninstall">Uninstall</h2>

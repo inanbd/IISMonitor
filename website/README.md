@@ -21,7 +21,7 @@ Then open <http://localhost:5080>.
 | Setting | Purpose |
 |---|---|
 | `BaseUrl` | Public address, such as `https://www.example.com`. Used for canonical links, Open Graph tags, structured data, `sitemap.xml` and `robots.txt`. Set it in production; when empty, the address of each request is used. |
-| `DownloadUrl` | Where the **Download** buttons go. When empty they say **Get started** and open the install guide. |
+| `DownloadUrl` | Where the **Download** buttons go: the latest release's zip, `https://github.com/inanbd/IISMonitor/releases/latest/download/IISMonitor-win-x64.zip`, which always points at the newest release. When empty, the buttons say **Get started** and open the install guide. |
 | `SourceUrl` | Source repository, set to `https://github.com/inanbd/IISMonitor`. It adds the GitHub logo to the header, a **Get IIS Monitor on GitHub** section with the clone command to the home page, links in the footer and the install guide, and, for a GitHub repository, links to its Issues. Leave empty to hide them all. |
 | `Publisher` | Company or person shown in the footer copyright and in the structured data; set to `inanbd`, the copyright holder in `LICENSE`. |
 | `License` | The license IIS Monitor is released under, set to `MIT`. It makes the site say "free and open source", link the repository's `LICENSE` file, and mark the app as free in the structured data. Leave empty if the code isn't open source. |
@@ -151,3 +151,13 @@ Azure App Service, or behind a reverse proxy on Linux. Set `Site__BaseUrl` to th
 Deploy the publish output: it holds properly compressed copies of the CSS and JavaScript. Running the
 build output (`bin/Release/...`) also works in any environment, because the site loads the build's
 static-asset manifest, but its compressed copies are barely compressed.
+
+## Releasing a new version
+
+`.github/workflows/release.yml` builds the install package on a Windows runner and publishes it as a
+GitHub release. To release, open **Actions → Release → Run workflow** on GitHub, enter the version
+(such as `1.0.1`) and run it, or push a tag such as `v1.0.1`. The workflow builds and tests the
+solution, publishes the service and dashboard, checks the package, and attaches
+`IISMonitor-win-x64.zip` and its SHA-256 checksum to the release. The website's Download buttons
+always point at the newest release, so nothing on the site needs changing. Update the version in
+`Directory.Build.props` too, so local builds match.

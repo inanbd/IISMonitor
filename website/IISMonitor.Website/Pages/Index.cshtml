@@ -166,7 +166,11 @@
                     {
                         <li>@Icons.Svg("check")<span>Use it on as many servers as you like, at work too, and change or share the code: <a href="@(Site.LicenseUrl ?? Site.Options.SourceUrl)" rel="noopener license">@Site.LicenseName</a>.</span></li>
                     }
-                    <li>@Icons.Svg("check")<span>Clone or download the code, then build it with the free .NET 10 SDK.</span></li>
+                    @if (Site.HasDownload)
+                    {
+                        <li>@Icons.Svg("check")<span>No build needed: download the ready-to-install package from the <a href="@(Site.ReleasesUrl ?? Site.DownloadUrl)" rel="noopener">latest release</a>.</span></li>
+                    }
+                    <li>@Icons.Svg("check")<span>Or clone the code and build it yourself with the free .NET 10 SDK.</span></li>
                     <li>@Icons.Svg("check")<span><code>scripts\publish.cmd</code> creates a package that runs on any Windows Server 2022 or 2025, with no .NET to install there.</span></li>
                     @if (Site.IssuesUrl is { } issues)
                     {
@@ -175,8 +179,16 @@
                     <li>@Icons.Svg("check")<span>Star or watch the repository to follow new changes.</span></li>
                 </ul>
                 <div class="actions">
-                    <a class="button" href="@Site.Options.SourceUrl" rel="noopener">@Site.SourceIcon()View on @Site.SourceHost</a>
-                    <a class="button button-quiet" href="/docs/getting-started">Read the install guide</a>
+                    @if (Site.HasDownload)
+                    {
+                        <a class="button" href="@Site.DownloadUrl">@Icons.Svg("download")Download</a>
+                        <a class="button button-quiet" href="@Site.Options.SourceUrl" rel="noopener">@Site.SourceIcon()View on @Site.SourceHost</a>
+                    }
+                    else
+                    {
+                        <a class="button" href="@Site.Options.SourceUrl" rel="noopener">@Site.SourceIcon()View on @Site.SourceHost</a>
+                        <a class="button button-quiet" href="/docs/getting-started">Read the install guide</a>
+                    }
                 </div>
             </div>
             <a class="repo-card" href="@Site.Options.SourceUrl" rel="noopener" aria-label="@Site.SourceName on @Site.SourceHost">

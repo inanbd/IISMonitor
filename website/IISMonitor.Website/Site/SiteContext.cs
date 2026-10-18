@@ -45,6 +45,9 @@ public sealed class SiteContext(IOptions<SiteOptions> options, IHttpContextAcces
 
     public string SourceCloneUrl => Options.SourceUrl.TrimEnd('/') + ".git";
 
+    /// <summary>The latest release's page (notes and files), when the source is on GitHub.</summary>
+    public string? ReleasesUrl => SourceIsGitHub ? Options.SourceUrl.TrimEnd('/') + "/releases/latest" : null;
+
     /// <summary>Where to report problems: the repository's GitHub Issues, when the source is on GitHub.</summary>
     public string? IssuesUrl => SourceIsGitHub ? Options.SourceUrl.TrimEnd('/') + "/issues" : null;
 

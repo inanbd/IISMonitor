@@ -13,6 +13,13 @@ keeps up to 7 days of history.
 
 Target platforms: **Windows Server 2022 and 2025** (IIS 10), x64.
 
+## Download
+
+**[Download IISMonitor-win-x64.zip](https://github.com/inanbd/IISMonitor/releases/latest/download/IISMonitor-win-x64.zip)**
+from the [latest release](https://github.com/inanbd/IISMonitor/releases/latest). It is ready to
+install: the .NET runtime is included. Before extracting it, right-click the zip, choose
+**Properties**, tick **Unblock** and click **OK**; then follow [Install on an IIS server](#install-on-an-iis-server).
+
 ## What is measured, and how
 
 | Metric | Per | Source |
@@ -124,7 +131,8 @@ placeholder screenshots.
 
 ## Install on an IIS server
 
-1. Copy the `publish` folder to the server.
+1. Copy the folder to the server: the extracted [download](#download), or the `publish` folder
+   you [built](#build).
 2. Right-click `install-service.cmd` and choose **Run as administrator**
    (or run `install-service.cmd` from an elevated command prompt).
    This copies the app to `C:\Program Files\IISMonitor`, registers and starts the `IISMonitor`
@@ -132,7 +140,7 @@ placeholder screenshots.
 3. Open **IIS Monitor** from the Start menu (it asks for administrator rights).
 4. If the toolbar shows **Enable response times**, click it once to turn on live response times.
 
-To update, publish again and re-run `install-service.cmd`; it stops the service, replaces the
+To update, download (or publish) the new version and re-run `install-service.cmd`; it stops the service, replaces the
 files and starts it again. To remove it: `uninstall-service.cmd` as administrator (add
 `-RemoveData` to also delete history and settings).
 
