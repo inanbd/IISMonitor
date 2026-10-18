@@ -1,0 +1,91 @@
+name: Release
+
+# Builds IIS Monitor on Windows, runs the tests, and publishes a GitHub release with the
+# ready-to-install package (IISMonitor-win-x64.zip) and its SHA-256 checksum.
+# Runs when a version tag such as v1.2.3 is pushed, or by hand from the Actions tab.
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to release, such as 1.0.1. Creates the tag v<version> on the selected branch.'
+        required: true
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: windows-latest
+    timeout-minutes: 45
+    env:
+      DOTNET_NOLOGO: 'true'
+      DOTNET_CLI_TELEMETRY_OPTOUT: 'true'
+      PACKAGE: IISMonitor-win-x64.zip
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+
+      - uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5.4.0
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Work out the version
+        shell: pwsh
+        env:
+          EVENT: ${{ github.event_name }}
+          INPUT_VERSION: ${{ inputs.version }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          $version = if ($env:EVENT -eq 'workflow_dispatch') { $env:INPUT_VERSION.Trim() } else { $env:REF_NAME -replace '^v', '' }
+          if ($version -notmatch '^\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?$') { throw "'$version' is not a version such as 1.2.3." }
+          "VERSION=$version" >> $env:GITHUB_ENV
+
+      - name: Build and test
+        shell: pwsh
+        run: |
+          dotnet build IISMonitor.sln -c Release "-p:Version=$env:VERSION"
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          dotnet test IISMonitor.sln -c Release --no-build
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+
+      - name: Publish the service and dashboard
+        shell: pwsh
+        run: ./scripts/publish.ps1 -Output "$env:RUNNER_TEMP/IISMonitor" -Version $env:VERSION
+
+      - name: Check the package contents
+        shell: pwsh
+        run: |
+          $dir = "$env:RUNNER_TEMP/IISMonitor"
+          foreach ($file in 'Service/IISMonitor.Service.exe', 'Dashboard/IISMonitor.exe', 'install-service.cmd', 'install-service.ps1', 'uninstall-service.cmd', 'uninstall-service.ps1', 'INSTALL.txt', 'LICENSE') {
+            if (-not (Test-Path (Join-Path $dir $file))) { throw "The package is missing $file." }
+          }
+          $expected = ($env:VERSION -replace '-.*$', '') + '.0'
+          foreach ($exe in 'Service/IISMonitor.Service.exe', 'Dashboard/IISMonitor.exe') {
+            $actual = (Get-Item (Join-Path $dir $exe)).VersionInfo.FileVersion
+            if ($actual -ne $expected) { throw "$exe has file version $actual, expected $expected." }
+          }
+
+      - name: Package
+        shell: pwsh
+        run: |
+          Compress-Archive -Path "$env:RUNNER_TEMP/IISMonitor/*" -DestinationPath $env:PACKAGE -CompressionLevel Optimal
+          $hash = (Get-FileHash $env:PACKAGE -Algorithm SHA256).Hash.ToLowerInvariant()
+          "$hash  $env:PACKAGE" | Set-Content "$env:PACKAGE.sha256" -Encoding ascii
+          $notes = (Get-Content .github/release-notes.md -Raw).Replace('{VERSION}', $env:VERSION).Replace('{SHA256}', $hash)
+          Set-Content release-notes.md $notes -Encoding utf8
+          Get-Item $env:PACKAGE | Format-Table Name, Length
+
+      - name: Publish the release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          $kind = if ($env:VERSION.Contains('-')) { '--prerelease' } else { '--latest' }
+          gh release create "v$env:VERSION" $env:PACKAGE "$env:PACKAGE.sha256" --title "IIS Monitor $env:VERSION" --notes-file release-notes.md --target $env:GITHUB_SHA $kind
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }

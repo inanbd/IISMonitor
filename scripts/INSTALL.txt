@@ -1,0 +1,32 @@
+IIS Monitor - real-time monitoring for IIS websites, application pools and SQL Server
+https://github.com/inanbd/IISMonitor
+
+REQUIREMENTS
+  - Windows Server 2022 or 2025 with IIS 10, x64.
+  - Administrator rights. Nothing else: the .NET runtime is included.
+
+INSTALL
+  1. Copy this folder to the IIS server.
+  2. Right-click install-service.cmd and choose "Run as administrator".
+     It copies IIS Monitor to C:\Program Files\IISMonitor, installs and starts the
+     "IISMonitor" Windows service, and adds "IIS Monitor" to the Start menu.
+  3. Open IIS Monitor from the Start menu.
+  4. If the toolbar shows "Enable response times", click it once. On the Requests tab,
+     click "Set up IIS logging..." to see every request and its client IP.
+
+  If you downloaded the .zip: before extracting, right-click it, choose Properties,
+  tick "Unblock" and click OK, so Windows doesn't warn about each file.
+
+UPDATE
+  Run install-service.cmd from the new version's folder. Settings and history are kept.
+
+UNINSTALL
+  Run uninstall-service.cmd as administrator. Add -RemoveData to also delete history
+  and settings (in C:\ProgramData\IISMonitor).
+
+HELP
+  Guides, troubleshooting and the source code: https://github.com/inanbd/IISMonitor
+  Report a problem: https://github.com/inanbd/IISMonitor/issues
+
+LICENSE
+  MIT. See the LICENSE file.

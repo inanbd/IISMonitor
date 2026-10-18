@@ -41,6 +41,11 @@ foreach ($part in 'Service', 'Dashboard') {
     Copy-Item -Path (Join-Path (Join-Path $SourceDir $part) '*') -Destination $target -Recurse -Force
 }
 
+# Files extracted from a downloaded zip keep Windows' "downloaded from the internet" mark, so the
+# dashboard would show a security warning every time it starts. The administrator chose to install
+# these files; clear the mark on the installed copies.
+Get-ChildItem -Path $InstallDir -Recurse -File | Unblock-File
+
 $exe = Join-Path $InstallDir 'Service\IISMonitor.Service.exe'
 if (-not $existing) {
     Write-Host 'Registering the service...'
